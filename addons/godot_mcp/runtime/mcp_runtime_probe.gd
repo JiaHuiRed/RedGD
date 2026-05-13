@@ -1034,9 +1034,9 @@ func _serialize_animation_tree_state(animation_tree: AnimationTree) -> Dictionar
 		"anim_player": str(animation_tree.get("anim_player")),
 		"tree_root_type": tree_root.get_class() if tree_root else "",
 		"has_playback": playback != null,
-		"current_length": float(animation_tree.get("parameters/current_length")),
-		"current_position": float(animation_tree.get("parameters/current_position")),
-		"current_delta": float(animation_tree.get("parameters/current_delta"))
+		"current_length": animation_tree.get("parameters/current_length") as float,
+		"current_position": animation_tree.get("parameters/current_position") as float,
+		"current_delta": animation_tree.get("parameters/current_delta") as float
 	}
 	if playback != null:
 		result["playback_class"] = playback.get_class() if playback.has_method("get_class") else ""
@@ -1045,9 +1045,9 @@ func _serialize_animation_tree_state(animation_tree: AnimationTree) -> Dictionar
 		if playback.has_method("get_current_node"):
 			result["current_node"] = str(playback.get_current_node())
 		if playback.has_method("get_current_length"):
-			result["playback_current_length"] = float(playback.get_current_length())
+			result["playback_current_length"] = playback.get_current_length() as float
 		if playback.has_method("get_current_play_position"):
-			result["playback_current_position"] = float(playback.get_current_play_position())
+			result["playback_current_position"] = playback.get_current_play_position() as float
 		if playback.has_method("get_travel_path"):
 			result["travel_path"] = PackedStringArray(playback.get_travel_path())
 	return result

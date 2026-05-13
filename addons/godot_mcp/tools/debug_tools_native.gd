@@ -2212,7 +2212,7 @@ func _tool_travel_runtime_animation_tree(params: Dictionary) -> Dictionary:
 	var state_name: String = params.get("state_name", "")
 	if node_path.is_empty() or state_name.is_empty():
 		return {"error": "node_path and state_name are required"}
-	return _request_runtime_probe("travel_animation_tree", [node_path, state_name], ["mcp:animation_tree_travelled"], params, {"node_path": node_path, "current_node": state_name})
+	return _request_runtime_probe("travel_animation_tree", [node_path, state_name], ["mcp:animation_tree_travelled"], params, {"node_path": node_path})
 
 func _register_get_runtime_material_state(server_core: RefCounted) -> void:
 	server_core.register_tool(

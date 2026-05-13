@@ -182,4 +182,4 @@ MCP 日志确认 `registered: 154`，其中 `Available tools: 30`，即 124 个 
 - **Project-Advanced (23 工具)**：已在 2026-05-13 完成验证，详见 `project-advanced-mcp-verification-2026-05-13.md`
 - **Debug-Advanced (67 工具)**：已在 2026-05-13 完成验证，详见 `debug-advanced-mcp-verification-2026-05-13.md`
 
-**全量验证汇总（155 工具）**：135 通过 + 19 pending（环境限制） + 0 失败 = 100% 通过率
+**全量验证最终汇总（154 工具）**：144 通过 + 2 未测试 + 6 pending + 2 预期限制 + 0 失败。详见 `full-verification-supplement-2026-05-13.md`
