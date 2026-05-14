@@ -1229,8 +1229,8 @@ Godot MCP Native 实现了 **154 个工具**，分为 6 大类（含核心和补
 **参数**：
 | 参数 | 类型 | 必需 | 描述 |
 |------|------|------|------|
-| `source` | string | 否 | 日志源：`mcp`（MCP 服务器日志，默认）或 `runtime`（`user://logs/godot.log`） |
-| `type` | Array[string] | 否 | 按类型过滤（如 `["Error", "Warning"]`）。仅对 MCP 源有效。空数组返回所有 |
+| `source` | string | 否 | 日志源：`mcp`（MCP 服务器日志，默认）、`runtime`（`user://logs/godot.log`）或 `editor_panel`（Godot 编辑器输出面板，含 print/push_error/push_warning/编译报错） |
+| `type` | Array[string] | 否 | 按类型过滤（如 `["Error", "Warning"]`）。对 MCP 和 editor_panel 源有效。空数组返回所有 |
 | `count` | int | 否 | 返回的最大日志条数（默认 `100`） |
 | `offset` | int | 否 | 跳过的日志条数（默认 `0`） |
 | `order` | string | 否 | 排序：`desc`（最新优先，默认）或 `asc`（最旧优先） |

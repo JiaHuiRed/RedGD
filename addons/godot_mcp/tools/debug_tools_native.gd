@@ -166,9 +166,9 @@ func _register_get_editor_logs(server_core: RefCounted) -> void:
 		"properties": {
 			"source": {
 				"type": "string",
-				"description": "Log source: 'mcp' (MCP server logs, default), 'runtime' (user://logs/godot.log).",
+				"description": "Log source: 'mcp' (MCP server logs, default), 'runtime' (user://logs/godot.log), 'editor_panel' (Godot editor output panel including print/errors/warnings).",
 				"default": "mcp",
-				"enum": ["mcp", "runtime"]
+				"enum": ["mcp", "runtime", "editor_panel"]
 			},
 			"type": {
 				"type": "array",
@@ -227,6 +227,8 @@ func _tool_get_editor_logs(params: Dictionary) -> Dictionary:
 
 	if source == "runtime":
 		return _get_runtime_logs(types, count, offset, order)
+	elif source == "editor_panel":
+		return _get_editor_panel_logs(types, count, offset, order)
 
 	return _get_mcp_logs(types, count, offset, order)
 
@@ -3365,3 +3367,61 @@ func _find_rich_text_label(node: Node) -> RichTextLabel:
 		if result:
 			return result
 	return null
+
+func _get_editor_panel_logs(types: Array, count: int, offset: int, order: String) -> Dictionary:
+	var editor_interface: EditorInterface = _get_editor_interface()
+	if not editor_interface:
+		return {"error": "Editor interface not available", "source": "editor_panel"}
+	var base_control: Control = editor_interface.get_base_control()
+	if not base_control:
+		return {"error": "Could not get base control", "source": "editor_panel"}
+	var log_panel: Node = base_control.find_child("*Output*", true, false)
+	if not log_panel:
+		return {"error": "Output panel not found", "source": "editor_panel"}
+	var rich_text: RichTextLabel = _find_rich_text_label(log_panel)
+	if not rich_text:
+		return {"error": "RichTextLabel not found in output panel", "source": "editor_panel"}
+	var raw_text: String = rich_text.get_parsed_text() if rich_text.has_method("get_parsed_text") else rich_text.get_text()
+	if raw_text.is_empty():
+		return {"logs": [], "count": 0, "total_available": 0, "source": "editor_panel"}
+	var lines: PackedStringArray = raw_text.split("\n")
+	var parsed_lines: Array[Dictionary] = []
+	for i in lines.size():
+		var line: String = lines[i].strip_edges()
+		if line.is_empty():
+			continue
+		var log_type: String = _infer_log_type_from_line(line)
+		parsed_lines.append({
+			"index": i,
+			"message": line,
+			"type": log_type
+		})
+	if not types.is_empty():
+		var filtered: Array[Dictionary] = []
+		for entry in parsed_lines:
+			if types.has(entry["type"]):
+				filtered.append(entry)
+		parsed_lines = filtered
+	var total_available: int = parsed_lines.size()
+	if order == "desc":
+		parsed_lines.reverse()
+	var start: int = mini(offset, parsed_lines.size())
+	var end: int = mini(start + count, parsed_lines.size())
+	var result_lines: Array[Dictionary] = []
+	for i in range(start, end):
+		result_lines.append(parsed_lines[i])
+	return {
+		"logs": result_lines,
+		"count": result_lines.size(),
+		"total_available": total_available,
+		"source": "editor_panel"
+	}
+
+func _infer_log_type_from_line(line: String) -> String:
+	if line.begins_with("ERROR:") or line.begins_with("SCRIPT ERROR:") or line.begins_with("PARSE ERROR:") or line.begins_with("ERROR at") or line.find("error") == 0:
+		return "Error"
+	if line.begins_with("WARNING:") or line.begins_with("WARN ") or line.find("warning") == 0:
+		return "Warning"
+	if line.begins_with("DEBUG:") or line.begins_with("DEBUG "):
+		return "Debug"
+	return "Info"
