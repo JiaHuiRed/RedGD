@@ -837,7 +837,8 @@ func _collect_project_tests_recursive(search_path: String, absolute_root: String
 func _run_python_project_test(test_path: String, absolute_test_path: String) -> Dictionary:
 	var logs: Array = []
 	var started_at_ms: int = Time.get_ticks_msec()
-	var exit_code: int = OS.execute("python", [absolute_test_path], logs, true)
+	var python_cmd: String = _find_python_executable()
+	var exit_code: int = OS.execute(python_cmd, [absolute_test_path], logs, true)
 	var duration_ms: int = Time.get_ticks_msec() - started_at_ms
 	var output: Array = []
 	for line in logs:
@@ -849,9 +850,18 @@ func _run_python_project_test(test_path: String, absolute_test_path: String) -> 
 		"test_path": test_path,
 		"exit_code": exit_code,
 		"duration_ms": duration_ms,
-		"command": ["python", absolute_test_path],
+		"command": [python_cmd, absolute_test_path],
 		"output": output
 	}
+
+func _find_python_executable() -> String:
+	var test_output: Array = []
+	if OS.execute("python3", ["--version"], test_output, true) == OK:
+		return "python3"
+	test_output.clear()
+	if OS.execute("python", ["--version"], test_output, true) == OK:
+		return "python"
+	return "python3"
 
 func _run_gut_project_test(test_path: String) -> Dictionary:
 	var gut_cmdln_path: String = "res://addons/gut/gut_cmdln.gd"

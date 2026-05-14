@@ -42,6 +42,26 @@ func test_reject_home_directory():
 	var result: Dictionary = PathValidator.validate_path("~/secret")
 	assert_false(result["valid"], "Home directory path should be rejected")
 
+func test_reject_macos_users_path():
+	var result: Dictionary = PathValidator.validate_path("/Users/admin/.ssh")
+	assert_false(result["valid"], "macOS Users path should be rejected")
+
+func test_reject_macos_library_path():
+	var result: Dictionary = PathValidator.validate_path("/Library/Preferences")
+	assert_false(result["valid"], "macOS Library path should be rejected")
+
+func test_reject_macos_applications_path():
+	var result: Dictionary = PathValidator.validate_path("/Applications/Xcode.app")
+	assert_false(result["valid"], "macOS Applications path should be rejected")
+
+func test_dangerous_patterns_includes_macos():
+	var has_users: bool = PathValidator.DANGEROUS_PATTERNS.has("/Users/")
+	var has_library: bool = PathValidator.DANGEROUS_PATTERNS.has("/Library/")
+	var has_applications: bool = PathValidator.DANGEROUS_PATTERNS.has("/Applications/")
+	assert_true(has_users, "Should include /Users/ in dangerous patterns")
+	assert_true(has_library, "Should include /Library/ in dangerous patterns")
+	assert_true(has_applications, "Should include /Applications/ in dangerous patterns")
+
 func test_non_strict_allows_more():
 	var result: Dictionary = PathValidator.validate_path("res://../escape.tscn", false)
 	assert_true(result["valid"], "Non-strict mode should allow traversal patterns")

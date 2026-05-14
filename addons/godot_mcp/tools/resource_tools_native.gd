@@ -219,7 +219,7 @@ static func _find_files_recursive(dir: DirAccess, extension: String, result: Arr
 	var file_name: String = dir.get_next()
 
 	while file_name != "":
-		var full_path: String = base_path + file_name
+		var full_path: String = base_path.path_join(file_name)
 
 		if dir.current_is_dir():
 			var sub_dir: DirAccess = DirAccess.open(full_path + "/")

@@ -22,6 +22,27 @@ func _get_editor_interface() -> EditorInterface:
 			return plugin.get_editor_interface()
 	return null
 
+func _get_export_templates_root() -> String:
+	var editor_interface: EditorInterface = _get_editor_interface()
+	if editor_interface:
+		var editor_paths: EditorPaths = editor_interface.get_editor_paths()
+		if editor_paths:
+			return editor_paths.get_export_templates_dir()
+	var os_name: String = OS.get_name()
+	if os_name == "Windows":
+		var appdata: String = OS.get_environment("APPDATA")
+		if not appdata.is_empty():
+			return appdata.path_join("Godot").path_join("export_templates")
+	elif os_name == "Linux" or os_name == "FreeBSD":
+		var home: String = OS.get_environment("HOME")
+		if not home.is_empty():
+			return home.path_join(".local/share/godot/export_templates")
+	elif os_name == "macOS":
+		var home: String = OS.get_environment("HOME")
+		if not home.is_empty():
+			return home.path_join("Library/Application Support/Godot/export_templates")
+	return ""
+
 func _is_vibe_coding_mode() -> bool:
 	if Engine.has_meta("GodotMCPPlugin"):
 		var plugin = Engine.get_meta("GodotMCPPlugin")
@@ -976,7 +997,7 @@ func _inspect_export_templates() -> Dictionary:
 	version_variants.append(base_version)
 	version_variants.append(base_version + ".mono")
 
-	var templates_root: String = OS.get_environment("APPDATA").path_join("Godot").path_join("export_templates")
+	var templates_root: String = _get_export_templates_root()
 	var installed_versions: Array[String] = []
 	var detected_files: Array[String] = []
 	var matching_version_installed: bool = false

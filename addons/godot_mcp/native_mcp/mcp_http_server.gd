@@ -123,11 +123,20 @@ func start() -> bool:
 	return true
 
 func _check_port_conflict(port: int) -> String:
+	var os_name: String = OS.get_name()
+	if os_name == "Windows":
+		return _check_port_conflict_windows(port)
+	elif os_name == "Linux" or os_name == "FreeBSD":
+		return _check_port_conflict_linux(port)
+	elif os_name == "macOS":
+		return _check_port_conflict_macos(port)
+	return ""
+
+func _check_port_conflict_windows(port: int) -> String:
 	var output: Array = []
 	var exit_code: int = OS.execute("netstat", ["-ano"], output)
 	if exit_code != OK or output.is_empty():
 		return ""
-	
 	var port_str: String = ":" + str(port) + " "
 	var lines: PackedStringArray = output[0].split("\n")
 	for line in lines:
@@ -151,6 +160,55 @@ func _check_port_conflict(port: int) -> String:
 					return "(PID " + pid + ", process: " + proc_name + ")"
 			return "(PID " + pid + ")"
 	return ""
+
+func _check_port_conflict_linux(port: int) -> String:
+	var output: Array = []
+	var exit_code: int = OS.execute("ss", ["-tlnp"], output)
+	if exit_code != OK or output.is_empty():
+		exit_code = OS.execute("netstat", ["-tlnp"], output)
+		if exit_code != OK or output.is_empty():
+			return ""
+	var port_str: String = ":" + str(port)
+	var lines: PackedStringArray = output[0].split("\n")
+	for line in lines:
+		var stripped: String = line.strip_edges()
+		if stripped.find(port_str) >= 0 and stripped.find("LISTEN") >= 0:
+			var pid_start: int = stripped.find("pid=")
+			if pid_start >= 0:
+				var pid_section: String = stripped.substr(pid_start + 4)
+				var pid_end: int = pid_section.find(",")
+				if pid_end < 0:
+					pid_end = pid_section.find(")")
+				var pid: String = pid_section.substr(0, pid_end) if pid_end >= 0 else pid_section
+				if pid.is_valid_int():
+					return _resolve_process_name_linux(pid)
+			return ""
+	return ""
+
+func _check_port_conflict_macos(port: int) -> String:
+	var output: Array = []
+	var exit_code: int = OS.execute("lsof", ["-i", ":" + str(port), "-sTCP:LISTEN", "-P", "-n"], output)
+	if exit_code != OK or output.is_empty():
+		return ""
+	var lines: PackedStringArray = output[0].split("\n")
+	if lines.size() >= 2:
+		var parts: PackedStringArray = lines[1].strip_edges().split(" ", false)
+		if parts.size() >= 2:
+			var proc_name: String = parts[0]
+			var pid: String = parts[1]
+			if pid.is_valid_int():
+				return "(PID " + pid + ", process: " + proc_name + ")"
+			return "(PID " + pid + ")"
+	return ""
+
+func _resolve_process_name_linux(pid: String) -> String:
+	var proc_output: Array = []
+	var proc_exit: int = OS.execute("ps", ["-p", pid, "-o", "comm=", "--no-headers"], proc_output)
+	if proc_exit == OK and not proc_output.is_empty():
+		var proc_name: String = proc_output[0].strip_edges()
+		if not proc_name.is_empty():
+			return "(PID " + pid + ", process: " + proc_name + ")"
+	return "(PID " + pid + ")"
 
 ## 停止 HTTP 服务器
 func stop() -> void:

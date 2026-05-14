@@ -23,6 +23,9 @@ const DANGEROUS_PATTERNS := [
 	"/etc/",        # Linux系统目录
 	"/var/",        # Linux变量目录
 	"/tmp/",        # 临时目录
+	"/Users/",      # macOS用户目录
+	"/Library/",    # macOS系统库目录
+	"/Applications/", # macOS应用目录
 	"D:\\",        # 其他Windows盘符
 	"E:\\",
 	"F:\\"

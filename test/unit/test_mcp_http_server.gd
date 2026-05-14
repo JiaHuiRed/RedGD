@@ -57,6 +57,19 @@ func test_generate_session_id_characters():
 	for ch in session_id:
 		assert_true(valid_chars.contains(ch), "Session ID should only contain alphanumeric characters")
 
+func test_check_port_conflict_returns_string():
+	var result: String = _http_server._check_port_conflict(9999)
+	assert_true(result is String, "Should return a string on any platform")
+
+func test_check_port_conflict_windows_method_exists():
+	assert_true(_http_server.has_method("_check_port_conflict_windows"), "Should have Windows-specific method")
+
+func test_check_port_conflict_linux_method_exists():
+	assert_true(_http_server.has_method("_check_port_conflict_linux"), "Should have Linux-specific method")
+
+func test_check_port_conflict_macos_method_exists():
+	assert_true(_http_server.has_method("_check_port_conflict_macos"), "Should have macOS-specific method")
+
 func test_set_port():
 	_http_server.set_port(9999)
 	assert_eq(_http_server._port, 9999, "Port should be set to 9999")
