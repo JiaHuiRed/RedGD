@@ -1608,7 +1608,7 @@ func _register_get_runtime_info(server_core: RefCounted) -> void:
 
 func _tool_get_runtime_info(params: Dictionary) -> Dictionary:
 	var result: Dictionary = await _request_runtime_probe_poll("get_runtime_info", [], ["mcp:runtime_info"], params)
-	if result.get("status", "") == "pending":
+	if result.get("status", "") in ["pending", "stale"]:
 		var bridge: RefCounted = _get_debugger_bridge()
 		if bridge:
 			var latest_runtime_info: Variant = bridge.get_latest_message_payload("mcp:runtime_info")
@@ -2788,10 +2788,11 @@ func _extract_pending_runtime_probe_response(bridge: RefCounted, pending_entry: 
 		var runtime_payload: Variant = bridge.get_latest_message_payload(message_name, match_fields)
 		if runtime_payload is Dictionary:
 			var response: Dictionary = runtime_payload.duplicate(true)
-			response["status"] = "success"
+			response["status"] = "stale"
+			response["stale"] = true
 			return response
 		if runtime_payload != null:
-			return {"status": "success", "value": runtime_payload}
+			return {"status": "stale", "stale": true, "value": runtime_payload}
 	return {}
 
 func _request_runtime_probe_poll(
@@ -2810,7 +2811,7 @@ func _request_runtime_probe_poll(
 	# Uses await get_tree().process_frame to let the editor main loop advance
 	# so EngineDebugger IPC messages are dispatched to _capture().
 	var result: Dictionary = _request_runtime_probe(command, payload, response_messages, params, match_fields)
-	if result.get("status") == "pending":
+	if result.get("status") in ["pending", "stale"]:
 		var timeout_ms: int = maxi(int(params.get("timeout_ms", 3000)), 100)
 		var deadline_ms: int = Time.get_ticks_msec() + timeout_ms
 		var tree: SceneTree = Engine.get_main_loop() as SceneTree
@@ -2820,8 +2821,12 @@ func _request_runtime_probe_poll(
 			else:
 				OS.delay_msec(16)
 			result = _request_runtime_probe(command, payload, response_messages, params, match_fields)
-			if result.get("status") != "pending":
+			if result.get("status") not in ["pending", "stale"]:
 				break
+	# Timeout expired - return whatever we have (may be stale)
+	if result.get("status") == "stale":
+		result["status"] = "success"
+		result["from_cache"] = true
 	return result
 
 func _is_truthy_runtime_value(value: Variant) -> bool:

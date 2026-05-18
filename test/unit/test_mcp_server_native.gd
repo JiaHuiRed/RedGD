@@ -108,3 +108,30 @@ func test_has_load_tool_states_in_enter_tree():
 	assert_true(load_pos >= 0, "load_tool_states should exist in source")
 	assert_true(panel_pos >= 0, "_create_main_screen_panel should exist in source")
 	assert_true(load_pos < panel_pos, "load_tool_states should be called BEFORE _create_main_screen_panel")
+
+func test_has_autoload_registration_methods():
+	var methods: Array = _plugin_script.get_script_method_list()
+	var method_names: Array = methods.map(func(m): return m["name"])
+	assert_true(method_names.has("_ensure_runtime_probe_autoload"), "Should have _ensure_runtime_probe_autoload method")
+	assert_true(method_names.has("_remove_runtime_probe_autoload"), "Should have _remove_runtime_probe_autoload method")
+
+func test_autoload_registered_in_enter_tree():
+	var methods: Array = _plugin_script.get_script_method_list()
+	var method_names: Array = methods.map(func(m): return m["name"])
+	assert_true(method_names.has("_enter_tree"), "Should have _enter_tree method")
+	var source_code: String = _plugin_script.source_code
+	# Verify _ensure_runtime_probe_autoload is called in _enter_tree
+	assert_true(source_code.contains("_ensure_runtime_probe_autoload"), "_enter_tree should call _ensure_runtime_probe_autoload")
+	# Verify correct ordering: _register_all_tools -> _ensure_runtime_probe_autoload -> _create_main_screen_panel
+	var register_pos: int = source_code.find("_register_all_tools")
+	var autoload_pos: int = source_code.find("_ensure_runtime_probe_autoload")
+	var panel_pos: int = source_code.find("_create_main_screen_panel")
+	assert_true(register_pos >= 0, "_register_all_tools should exist in source")
+	assert_true(autoload_pos >= 0, "_ensure_runtime_probe_autoload should exist in source")
+	assert_true(panel_pos >= 0, "_create_main_screen_panel should exist in source")
+	assert_true(register_pos < autoload_pos, "_ensure_runtime_probe_autoload should be called AFTER _register_all_tools")
+	assert_true(autoload_pos < panel_pos, "_ensure_runtime_probe_autoload should be called BEFORE _create_main_screen_panel")
+
+func test_autoload_removed_in_exit_tree():
+	var source_code: String = _plugin_script.source_code
+	assert_true(source_code.contains("_remove_runtime_probe_autoload"), "_exit_tree should call _remove_runtime_probe_autoload")

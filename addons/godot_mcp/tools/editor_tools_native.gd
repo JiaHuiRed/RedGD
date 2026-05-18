@@ -1205,6 +1205,11 @@ func _tool_get_editor_screenshot(params: Dictionary) -> Dictionary:
 		return {"error": "Invalid save path: " + path_validation["error"]}
 	save_path = path_validation["sanitized"]
 
+	# Switch the main screen editor to the target viewport type so the
+	# SubViewport is visible and actively rendering. Without this, the
+	# viewport may show stale content when the editor is in the background.
+	editor_interface.set_main_screen_editor(viewport_type.to_upper())
+
 	var viewport: SubViewport = null
 	if viewport_type == "3d":
 		viewport = editor_interface.get_editor_viewport_3d(viewport_index)
@@ -1214,10 +1219,19 @@ func _tool_get_editor_screenshot(params: Dictionary) -> Dictionary:
 	if not viewport:
 		return {"error": "Failed to get editor viewport"}
 
-	# Force a render flush so the viewport shows the current scene, not stale content
+	# Temporarily force the viewport to always update so it renders even
+	# when the editor window is in the background or minimized.
+	var original_update_mode: int = viewport.render_target_update_mode
+	viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	# Wait one frame for the SubViewport to render, then force a flush.
+	var tree: SceneTree = Engine.get_main_loop() as SceneTree
+	if tree:
+		await tree.process_frame
 	RenderingServer.force_draw()
 
 	var texture: ViewportTexture = viewport.get_texture()
+	# Restore the original update mode after capturing.
+	viewport.render_target_update_mode = original_update_mode
 	if not texture:
 		return {"error": "Failed to get viewport texture"}
 

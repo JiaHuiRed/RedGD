@@ -107,3 +107,19 @@ func test_select_file_blocked_in_vibe_mode() -> void:
 func test_select_file_bypasses_with_allow_ui_focus() -> void:
 	var result: Dictionary = _editor_tools._tool_select_file({"file_path": "res://project.godot", "allow_ui_focus": true})
 	assert_false(result.get("blocked", false), "allow_ui_focus should bypass vibe mode")
+
+func test_editor_screenshot_update_always_forced():
+	var source_code: String = _editor_tools.get_script().source_code
+	assert_true(source_code.contains("SubViewport.UPDATE_ALWAYS"), "get_editor_screenshot should set UPDATE_ALWAYS before capturing")
+	assert_true(source_code.contains("render_target_update_mode = original_update_mode"), "get_editor_screenshot should restore original update mode after capturing")
+	assert_true(source_code.contains("RenderingServer.force_draw()"), "get_editor_screenshot should call force_draw after frame wait")
+
+func test_editor_screenshot_switches_main_screen():
+	var source_code: String = _editor_tools.get_script().source_code
+	assert_true(source_code.contains("set_main_screen_editor"), "get_editor_screenshot should switch main screen editor before capturing")
+	assert_true(source_code.contains("viewport_type.to_upper()"), "get_editor_screenshot should convert viewport_type to upper case for set_main_screen_editor")
+
+func test_editor_screenshot_uses_engine_main_loop():
+	var source_code: String = _editor_tools.get_script().source_code
+	assert_true(source_code.contains("Engine.get_main_loop()"), "get_editor_screenshot should use Engine.get_main_loop() instead of get_tree() for SceneTree access")
+	assert_false(source_code.contains("get_tree().process_frame"), "get_editor_screenshot should NOT use get_tree() which is unavailable on RefCounted")
