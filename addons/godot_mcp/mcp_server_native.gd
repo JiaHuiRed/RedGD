@@ -114,7 +114,21 @@ const TOOL_SCRIPT_PATHS: Dictionary = {
 
 func _enter_tree() -> void:
 	_log_info("Godot Native MCP Plugin entering tree...")
-	
+
+	# Load persisted config (mcp_settings.cfg) onto the exported properties
+	# before the server is created, so headless `--mcp-server` mode honors the
+	# port/transport/auth set via the editor UI. The @export setters guard on
+	# `_native_server` (still null here), so this only stores values; the
+	# set_* calls below apply them to the server.
+	#
+	# Command-line overrides (--mcp-port / --mcp-transport) are NOT applied
+	# here: the main-screen panel created below runs _load_settings() during
+	# _enter_tree, which re-assigns the persisted port to the server through
+	# the http_port setter and would clobber an override applied this early.
+	# Overrides are applied last, inside _start_native_server(), right before
+	# the port is bound. Precedence: @export default < persisted cfg < cmd line.
+	_apply_persisted_settings()
+
 	Engine.set_meta("GodotMCPPlugin", self)
 	
 	_editor_interface = get_editor_interface()
@@ -229,6 +243,77 @@ func _exit_tree() -> void:
 	_native_server = null
 	
 	_log_info("Godot Native MCP Plugin shutdown complete")
+
+
+## Parse MCP command-line overrides from user args (the tokens after the `--`
+## separator). Returns {"http_port": int, "transport_mode": String}. A port of
+## -1 and an empty transport mean "no override given". Out-of-range ports and
+## unknown transports are ignored, so a malformed argument can never break
+## startup. Pure/static so it can be unit-tested without EditorInterface.
+static func parse_mcp_overrides(args: PackedStringArray) -> Dictionary:
+	var port: int = -1
+	var transport: String = ""
+	for arg in args:
+		if arg.begins_with("--mcp-port="):
+			var p: int = arg.substr(len("--mcp-port=")).to_int()
+			if p >= 1024 and p <= 65535:
+				port = p
+		elif arg.begins_with("--mcp-transport="):
+			var t: String = arg.substr(len("--mcp-transport="))
+			if t == "http" or t == "stdio":
+				transport = t
+	return {"http_port": port, "transport_mode": transport}
+
+
+## Load persisted settings (mcp_settings.cfg) onto the exported properties
+## before the server is configured, so headless `--mcp-server` mode honors the
+## port/transport/auth set via the editor UI. Mirrors the panel _load_settings.
+## `user://` resolves under --user-data-dir, so each parallel instance reads its
+## own config. @export setters guard on `_native_server` (still null here), so
+## assigning is safe; the set_* calls later in _enter_tree apply the values.
+func _apply_persisted_settings() -> void:
+	var mgr: MCPSettingsManager = MCPSettingsManager.new()
+	var s: Dictionary = mgr.load_settings()
+	if s.is_empty():
+		return
+	if s.has("transport_mode"):
+		transport_mode = s["transport_mode"]
+	if s.has("http_port"):
+		http_port = s["http_port"]
+	if s.has("auth_enabled"):
+		auth_enabled = s["auth_enabled"]
+	if s.has("auth_token"):
+		auth_token = s["auth_token"]
+	if s.has("sse_enabled"):
+		sse_enabled = s["sse_enabled"]
+	if s.has("allow_remote"):
+		allow_remote = s["allow_remote"]
+	if s.has("cors_origin"):
+		cors_origin = s["cors_origin"]
+	if s.has("log_level"):
+		log_level = s["log_level"]
+	if s.has("security_level"):
+		security_level = s["security_level"]
+	if s.has("rate_limit"):
+		rate_limit = s["rate_limit"]
+	if s.has("auto_start"):
+		auto_start = s["auto_start"]
+	_log_info("Applied persisted settings: port=" + str(http_port) + " transport=" + transport_mode)
+
+
+## Apply command-line overrides on top of persisted/exported settings. The
+## command line wins, letting multiple MCP instances run with distinct ports
+## (--mcp-port=N) regardless of the persisted config.
+func _apply_cmdline_overrides() -> void:
+	var o: Dictionary = parse_mcp_overrides(OS.get_cmdline_user_args())
+	var port_override: int = int(o["http_port"])
+	var transport_override: String = o["transport_mode"]
+	if port_override >= 0:
+		http_port = port_override
+		_log_info("MCP port overridden via command line: " + str(http_port))
+	if transport_override != "":
+		transport_mode = transport_override
+		_log_info("MCP transport overridden via command line: " + transport_mode)
 
 # ============================================================================
 # 插件配置（根据godot-dev-guide优化）
@@ -398,7 +483,16 @@ func _start_native_server() -> bool:
 	if _native_server.is_running():
 		_log_warn("MCP Server already running")
 		return false
-	
+
+	# Apply command-line overrides (--mcp-port / --mcp-transport) last, right
+	# before binding. The main-screen panel's _load_settings() runs during
+	# _enter_tree and re-pushes the persisted port onto the server via the
+	# http_port setter; applying the override here makes --mcp-port
+	# authoritative at bind time, so parallel headless instances can coexist on
+	# distinct ports regardless of mcp_settings.cfg. A pure no-op without
+	# overrides (parse_mcp_overrides returns -1 / "").
+	_apply_cmdline_overrides()
+
 	_log_info("Starting native MCP server...")
 	var success: bool = _native_server.start()
 	
