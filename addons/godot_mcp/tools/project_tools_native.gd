@@ -842,7 +842,7 @@ func _run_python_project_test(test_path: String, absolute_test_path: String) -> 
 	var duration_ms: int = Time.get_ticks_msec() - started_at_ms
 	var output: Array = []
 	for line in logs:
-		output.append(str(line))
+		output.append(_sanitize_cli_output(str(line)))
 	return {
 		"status": "passed" if exit_code == OK else "failed",
 		"framework": "python",
@@ -853,6 +853,87 @@ func _run_python_project_test(test_path: String, absolute_test_path: String) -> 
 		"command": [python_cmd, absolute_test_path],
 		"output": output
 	}
+
+# Sanitize CLI output: remove control characters and ANSI escape sequences (ESC[...m etc.)
+# that would break JSON.stringify() in Godot 4.x (which does not escape ESC/U+001B).
+# Defense-in-depth: even if the subprocess doesn't use colors, this protects
+# against any other control character in stdout.
+func _sanitize_cli_output(text: String) -> String:
+	var sanitized: String = ""
+	var in_escape: bool = false
+	var i: int = 0
+	while i < text.length():
+		var codepoint: int = text.unicode_at(i)
+		
+		# --- Handle ANSI escape sequences ---
+		# ESC (27) starts an ANSI sequence: ESC[X... or ESC[X...letter
+		if codepoint == 27:
+			in_escape = true
+			i += 1
+			continue
+		
+		# Inside an escape sequence: skip everything until a letter (A-Z/a-z) ends it
+		if in_escape:
+			var is_letter: bool = (codepoint >= 65 and codepoint <= 90) or (codepoint >= 97 and codepoint <= 122)
+			if is_letter:
+				in_escape = false
+			# For BEL (7) or ESC (27) inside an OSC sequence, also terminate
+			if codepoint == 7 or codepoint == 27:
+				in_escape = false
+				if codepoint == 27:
+					continue  # Re-process this potential start
+			i += 1
+			continue
+		
+		# --- Filter control characters ---
+		var keep_char: bool = codepoint >= 32 and codepoint != 127
+		if codepoint == 9 or codepoint == 10 or codepoint == 13:
+			keep_char = true
+		# Unicode Private Use Area (some terminals map glyphs here)
+		if codepoint >= 0xE000 and codepoint <= 0xF8FF:
+			keep_char = false
+		# Unicode Replacement Character U+FFFD (65533) — keep, not a control char
+		if keep_char:
+			sanitized += String.chr(codepoint)
+		i += 1
+	
+	# Second pass: clean up any residual CSI fragments like "[31m" or "[0m"
+	# that remain if an ESC was consumed by another layer before reaching us.
+	# CSI pattern: '[' followed by one or more params (digits/semicolons), then a letter.
+	# Uses lookahead to avoid false positives (e.g. "Array[0]" or "[Passed]").
+	var cleaned: String = ""
+	var j: int = 0
+	while j < sanitized.length():
+		var c: int = sanitized.unicode_at(j)
+		if c == 91:  # '['
+			# Look ahead to validate full CSI sequence before consuming
+			var scan_pos: int = j + 1
+			var has_param: bool = false
+			while scan_pos < sanitized.length():
+				var sc: int = sanitized.unicode_at(scan_pos)
+				var is_sc_param: bool = (sc >= 48 and sc <= 59)  # 0-9 or ;
+				var is_sc_letter: bool = (sc >= 65 and sc <= 90) or (sc >= 97 and sc <= 122)  # A-Z a-z
+				if is_sc_param:
+					has_param = true
+					scan_pos += 1
+				elif is_sc_letter and has_param:
+					# Valid CSI: '[' + params + letter — skip it all
+					j = scan_pos + 1
+					break
+				else:
+					# Not a CSI sequence — keep the '['
+					cleaned += String.chr(91)
+					j += 1
+					break
+			if scan_pos >= sanitized.length():
+				# Reached end without completing a CSI sequence
+				cleaned += String.chr(91)
+				j += 1
+			continue
+		cleaned += String.chr(c)
+		j += 1
+	
+	return cleaned
 
 func _find_python_executable() -> String:
 	var test_output: Array = []
@@ -874,7 +955,8 @@ func _run_gut_project_test(test_path: String) -> Dictionary:
 		"--path", project_path,
 		"-s", gut_cmdln_path,
 		"-gtest=" + test_path,
-		"-gexit"
+		"-gexit",
+		"-gdisable_colors"
 	]
 	var logs: Array = []
 	var started_at_ms: int = Time.get_ticks_msec()
@@ -882,7 +964,7 @@ func _run_gut_project_test(test_path: String) -> Dictionary:
 	var duration_ms: int = Time.get_ticks_msec() - started_at_ms
 	var output: Array = []
 	for line in logs:
-		output.append(str(line))
+		output.append(_sanitize_cli_output(str(line)))
 	return {
 		"status": "passed" if exit_code == OK else "failed",
 		"framework": "gut",
