@@ -15,10 +15,10 @@ A powerful Godot Engine plugin that integrates AI assistants (Claude, etc.) via 
 - **Real-time Editing**: Apply AI suggestions directly in the editor
 - **Comprehensive Tool Set** (155 tools — 30 core + 125 supplementary):
   - **Node Tools** (9 core + 11 advanced): Create, modify, manage scene nodes, duplicate, move, rename, signal connections, anchor presets, group management, batch operations, scene auditing
-  - **Script Tools** (7 core + 8 advanced): Edit, analyze, create, attach, validate GDScript files, execute scripts, search in files, symbol indexing, definition & reference lookup
+  - **Script Tools** (7 core + 8 advanced): Edit, analyze, create, attach, validate GDScript and C# files, execute scripts, search in files, symbol indexing, definition & reference lookup
   - **Scene Tools** (4 core + 4 advanced): Manipulate scene structure, save scenes, list/open/close scene tabs, project scene listing
   - **Editor Tools** (4 core + 12 advanced): Control editor functionality, screenshot, signal inspection, filesystem reload, node/file selection, export management, property inspector
-  - **Debug Tools** (3 core + 66 advanced): Logging, debugger sessions, breakpoints, stack/variable inspection, profilers, runtime probe, animation/audio/shader/tilemap runtime control, debug execution control
+  - **Debug Tools** (3 core + 68 advanced): Logging, debugger sessions, breakpoints, stack/variable inspection, profilers, runtime probe, animation/audio/shader/tilemap runtime control, debug execution control, await_scene_ready
   - **Project Tools** (3 core + 23 advanced): Access project settings, list resources, create resources, run tests, manage input mappings, inspect autoloads/global classes, resource diagnostics & health audit
 
 ## 📦 Installation
@@ -271,7 +271,7 @@ Implement a day/night cycle system with dynamic lighting
 - `validate-export-preset` - Validate an export preset
 - `run-export` - Run a Godot CLI export
 
-### Debug (3 core + 66 advanced)
+### Debug (3 core + 68 advanced)
 - `get-editor-logs` - Get editor/runtime logs
 - `debug-print` - Print debug info
 - `clear-output` - Clear MCP/editor output buffers
@@ -289,6 +289,7 @@ Implement a day/night cycle system with dynamic lighting
 - `request-debug-break` - Ask the runtime probe to enter Godot's debug break loop
 - `send-debug-command` - Send step/next/out/continue/stack debugger commands to breaked sessions
 - `get-runtime-info` - Query runtime metrics (FPS, node count, etc.) through the probe
+- `await-scene-ready` - Wait until a specific scene is loaded through the probe
 - `get-runtime-scene-tree` - Read the live runtime scene tree from the running game
 - `inspect-runtime-node` - Inspect a live runtime node and its serializable properties
 - `update-runtime-node-property` - Modify a property on a live runtime node

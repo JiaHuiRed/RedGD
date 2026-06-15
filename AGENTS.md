@@ -117,6 +117,30 @@ addons/godot_mcp/
 6. **验证** — 运行完整 GUT 测试套件，要求 0 失败
 
 **注意：** supplementary 工具注册后默认禁用（`enabled = (category == "core")`），`tools/list` 不会返回它。用户需在 MCP 面板中手动启用，或在测试时用 `core.set_tool_enabled("tool_name", true)` 开启。
+
+### 修改已有工具后的文档更新流程
+
+每次修改已有工具（新增参数、返回值、行为变更）时，必须同步更新以下文档：
+
+1. **`docs/current/tools-reference.md`**
+   - 更新工具的**参数表**（新增/变更的参数名、类型、必需、描述）
+   - 更新工具的**返回值表**（新增/变更的字段名、类型、描述）
+   - 更新概览表中的分类计数（如调试工具 67→68）
+   - 重编号后续工具（新增工具条目时）
+2. **`README.md` 和 `README.zh.md`**（项目根目录和 `addons/godot_mcp/` 下）
+   - 更新功能列表中的工具计数（`Comprehensive Tool Set` / `全面的工具集`）
+   - 更新详细工具列表的分类计数（如 `### Debug (3 core + N advanced)`）
+   - 在对应分类下**新增工具条目**（使用工具的 snake_case 名称）
+3. **`docs/current/architecture.md`** — 如果工具分类数量有大幅变化，更新工具注册章节的统计表
+4. **翻译文件**
+   - `translations/tool_descriptions.json` — 新工具有描述文本
+   - `translations/tool_descriptions.csv` — 新工具有中英文描述
+5. **`docs/development/adding-new-tools.md`** — 如果工具创建流程有变化
+
+**验证清单：**
+- [ ] 全文搜索旧工具数（`154`、`66`、`124`、`70`）确认已替换
+- [ ] 全文搜索新工具名确认已出现在详细工具列表
+- [ ] 如果没有新工具，确认分类计数已更新
 ### 临时文件清理（强制）
 每次代码修改结束后，必须清理：
 1. `.codeartsdoer/temp/` — diff 备份 `.gd` 文件（会导致 `Class hides a global script class` 错误）
