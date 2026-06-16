@@ -63,7 +63,7 @@ func test_save_scene_output_schema_includes_operation():
 	var result: Dictionary = _scene_tools._tool_save_scene({"file_path": ""})
 	# In headless mode: will error. When it succeeds, it should have operation.
 	if result.has("error"):
-		assert_passing(true, "Headless mode: expected error without editor interface")
+		pass_test("Headless mode: expected error without editor interface")
 	else:
 		assert_has(result, "operation", "save_scene should return operation field")
 
