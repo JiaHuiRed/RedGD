@@ -11,7 +11,6 @@ var _auto_start_check: CheckBox = null
 var _vibe_coding_mode_check: CheckBox = null
 var _log_level_option: OptionButton = null
 var _security_level_option: OptionButton = null
-var _log_text_edit: TextEdit = null
 var _tools_list_container: VBoxContainer = null
 var _tools_count_label: Label = null
 
@@ -35,24 +34,19 @@ var _log_level_label: Label = null
 var _security_label: Label = null
 var _rate_limit_label: Label = null
 var _language_label: Label = null
-var _clear_log_button: Button = null
 var _refresh_tools_button: Button = null
+var _open_log_button: Button = null
 
 var _tab_container: TabContainer = null
 var _debounce_timer: Timer = null
 var _group_widgets: Dictionary = {}
 var _language_option: OptionButton = null
 
-var _log_buffer: Array[String] = []
-var _max_log_lines: int = 50
-var _log_flush_index: int = 0
-var _log_debounce_timer: Timer = null
 var _log_file_path: String = "user://mcp_server.log"
-var _log_file_flush_count: int = 50
+var _log_file_flush_count: int = 10
 var _log_pending_write: Array[String] = []
 var _log_file_initialized: bool = false
 var _max_log_file_size: int = 5242880
-var _log_ui_max_chars: int = 500  # UI 显示单条最大字符数，超出截断
 
 var _translation_manager: MCPTranslationManager = null
 var _settings_manager: MCPSettingsManager = null
@@ -68,6 +62,7 @@ func _ready() -> void:
 	add_child(_debounce_timer)
 
 func _exit_tree() -> void:
+	_flush_log_to_file()
 	if _debounce_timer:
 		_debounce_timer.stop()
 
@@ -119,16 +114,13 @@ func _create_ui() -> void:
 	add_child(_tab_container)
 
 	var settings_tab: VBoxContainer = _create_settings_tab()
-	var log_tab: VBoxContainer = _create_log_tab()
 	var tools_tab: VBoxContainer = _create_tools_tab()
 
 	_tab_container.add_child(settings_tab)
-	_tab_container.add_child(log_tab)
 	_tab_container.add_child(tools_tab)
 
 	_tab_container.set_tab_title(0, _tr("ui.settings"))
-	_tab_container.set_tab_title(1, _tr("ui.server_log"))
-	_tab_container.set_tab_title(2, _tr("ui.tool_manager"))
+	_tab_container.set_tab_title(1, _tr("ui.tool_manager"))
 
 	_update_ui_state()
 	_refresh_tools_list()
@@ -330,46 +322,13 @@ func _create_settings_tab() -> VBoxContainer:
 	_language_option.item_selected.connect(_on_language_selected)
 	lang_hbox.add_child(_language_option)
 
-	return tab
+	content.add_child(HSeparator.new())
 
-func _create_log_tab() -> VBoxContainer:
-	var tab: VBoxContainer = VBoxContainer.new()
-	tab.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	tab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	tab.add_theme_constant_override("separation", 4)
-
-	var margin: MarginContainer = MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 12)
-	margin.add_theme_constant_override("margin_right", 12)
-	margin.add_theme_constant_override("margin_top", 8)
-	margin.add_theme_constant_override("margin_bottom", 8)
-	margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	tab.add_child(margin)
-
-	var content: VBoxContainer = VBoxContainer.new()
-	content.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	margin.add_child(content)
-
-	_log_text_edit = TextEdit.new()
-	_log_text_edit.editable = false
-	_log_text_edit.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
-	_log_text_edit.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_log_text_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	content.add_child(_log_text_edit)
-
-	_clear_log_button = Button.new()
-	_clear_log_button.text = _tr("ui.clear_log")
-	_clear_log_button.pressed.connect(_on_clear_log_pressed)
-	_clear_log_button.size_flags_horizontal = Control.SIZE_SHRINK_END
-	content.add_child(_clear_log_button)
-
-	_log_debounce_timer = Timer.new()
-	_log_debounce_timer.wait_time = 0.1
-	_log_debounce_timer.one_shot = true
-	_log_debounce_timer.timeout.connect(_flush_log_buffer)
-	add_child(_log_debounce_timer)
+	_open_log_button = Button.new()
+	_open_log_button.text = _tr("ui.open_log")
+	_open_log_button.pressed.connect(_open_log_file)
+	_open_log_button.size_flags_horizontal = Control.SIZE_SHRINK_END
+	content.add_child(_open_log_button)
 
 	return tab
 
@@ -590,15 +549,23 @@ func _on_rate_limit_changed(value: float) -> void:
 		_plugin.rate_limit = int(value)
 	_debounce_save()
 
-func _on_clear_log_pressed() -> void:
-	clear_log()
+func _open_log_file() -> void:
+	# Flush pending writes before opening so the file has the latest data
+	_flush_log_to_file()
+	var path: String = ProjectSettings.globalize_path(_log_file_path)
+	# Build a proper file:// URI that works on Windows, macOS, and Linux.
+	# globalize_path returns e.g. "C:/Users/..." (Windows) or "/Users/..." (macOS/Linux).
+	# file:// expects exactly one slash before the absolute path: file:///C:/... or file:///home/...
+	if not path.begins_with("/"):
+		path = "/" + path
+	OS.shell_open("file://" + path)
 
 func clear_log() -> void:
-	_log_buffer.clear()
-	_log_flush_index = 0
 	_log_pending_write.clear()
-	if _log_text_edit:
-		_log_text_edit.text = ""
+	var file: FileAccess = FileAccess.open(_log_file_path, FileAccess.WRITE)
+	if file:
+		file.store_string("")
+		file.close()
 
 func _refresh_tools_list() -> void:
 	if not _tools_list_container:
@@ -711,8 +678,7 @@ func _update_tools_count() -> void:
 func _refresh_translations() -> void:
 	if _tab_container:
 		_tab_container.set_tab_title(0, _tr("ui.settings"))
-		_tab_container.set_tab_title(1, _tr("ui.server_log"))
-		_tab_container.set_tab_title(2, _tr("ui.tool_manager"))
+		_tab_container.set_tab_title(1, _tr("ui.tool_manager"))
 	if _start_button:
 		_start_button.text = _tr("ui.start_server")
 	if _stop_button:
@@ -747,10 +713,10 @@ func _refresh_translations() -> void:
 		_rate_limit_label.text = _tr("ui.rate_limit")
 	if _language_label:
 		_language_label.text = _tr("ui.language")
-	if _clear_log_button:
-		_clear_log_button.text = _tr("ui.clear_log")
 	if _refresh_tools_button:
 		_refresh_tools_button.text = _tr("ui.refresh_tools")
+	if _open_log_button:
+		_open_log_button.text = _tr("ui.open_log")
 	if _language_option:
 		var current_locale: String = _translation_manager.get_locale() if _translation_manager else "en"
 		var locales: Array = _translation_manager.get_available_locales() if _translation_manager else ["en", "zh"]
@@ -851,25 +817,15 @@ func _on_debounce_timeout() -> void:
 	_save_settings()
 
 func update_log(message: String) -> void:
-	if not _log_text_edit:
-		return
 	if Thread.is_main_thread():
 		_append_log(message)
 	else:
 		call_deferred("_append_log", message)
 
 func _append_log(message: String) -> void:
-	if not _log_text_edit:
-		return
-	_log_buffer.append(message)
 	_log_pending_write.append(message)
-	if _log_buffer.size() > _max_log_lines * 2:
-		_log_buffer = _log_buffer.slice(_log_buffer.size() - _max_log_lines)
-		_log_flush_index = 0
 	if _log_pending_write.size() >= _log_file_flush_count:
 		_flush_log_to_file()
-	if _log_debounce_timer and _log_debounce_timer.is_stopped():
-		_log_debounce_timer.start()
 
 func _flush_log_to_file() -> void:
 	if _log_pending_write.is_empty():
@@ -881,10 +837,21 @@ func _flush_log_to_file() -> void:
 				var size: int = existing.get_length()
 				existing.close()
 				if size > _max_log_file_size:
-					var old_path: String = _log_file_path + ".1"
-					if FileAccess.file_exists(old_path):
-						DirAccess.remove_absolute(ProjectSettings.globalize_path(old_path))
-					DirAccess.rename_absolute(ProjectSettings.globalize_path(_log_file_path), ProjectSettings.globalize_path(old_path))
+					# File too large: keep only the tail (~half max size),
+					# discarding older entries from the front.
+					var f: FileAccess = FileAccess.open(_log_file_path, FileAccess.READ)
+					if f:
+						var tail_size: int = _max_log_file_size / 2
+						f.seek_end(-tail_size)
+						# Skip to the start of a line to avoid truncation mid-line
+						f.get_line()  # discard partial first line
+						var tail: String = f.get_as_text()
+						f.close()
+						f = FileAccess.open(_log_file_path, FileAccess.WRITE)
+						if f:
+							f.store_string("[MCP] Log trimmed (exceeded max size)\n")
+							f.store_string(tail)
+							f.close()
 		var file: FileAccess = FileAccess.open(_log_file_path, FileAccess.WRITE)
 		if file:
 			file.close()
@@ -896,34 +863,7 @@ func _flush_log_to_file() -> void:
 			file.store_line(line)
 		file.close()
 	_log_pending_write.clear()
-	_log_buffer.append("[MCP] Log flushed to %s" % _log_file_path)
-	if _log_debounce_timer and _log_debounce_timer.is_stopped():
-		_log_debounce_timer.start()
 
-func _flush_log_buffer() -> void:
-	if not _log_text_edit:
-		return
-	if _log_flush_index >= _log_buffer.size():
-		return
-	var prev_index: int = _log_flush_index
-	_log_flush_index = _log_buffer.size()
-	# 增量追加：只添加新增的行，不全量替换
-	for i in range(prev_index, _log_buffer.size()):
-		var line: String = _log_buffer[i]
-		if line.length() > _log_ui_max_chars:
-			line = line.left(_log_ui_max_chars) + "... [truncated]"
-		_log_text_edit.text += line + "\n"
-	# 裁剪超出上限的旧行（按行数）
-	var total_lines: int = _log_text_edit.get_line_count()
-	if total_lines > _max_log_lines:
-		_log_text_edit.select_all()
-		var full_text: String = _log_text_edit.text
-		# 找到第 (total_lines - _max_log_lines) 行的位置，删除前面的内容
-		var lines: PackedStringArray = full_text.split("\n")
-		var keep_start: int = lines.size() - _max_log_lines
-		if keep_start > 0:
-			_log_text_edit.text = "\n".join(lines.slice(keep_start))
-	_log_text_edit.scroll_vertical = _log_text_edit.get_line_count()
 
 func refresh() -> void:
 	if Thread.is_main_thread():
