@@ -117,6 +117,8 @@ func register_tools(server_core: RefCounted) -> void:
 	_register_inspect_export_templates(server_core)
 	_register_validate_export_preset(server_core)
 	_register_run_export(server_core)
+	_register_manage_export_templates(server_core)
+	_register_configure_android_export(server_core)
 	_register_get_unsaved_changes(server_core)
 	_register_save_all_scripts(server_core)
 	_register_reload_open_scripts(server_core)
@@ -1862,4 +1864,422 @@ func _tool_get_import_status(_params: Dictionary) -> Dictionary:
 		"importing": importing,
 		"importing_supported": importing_supported,
 		"busy": scanning or importing == true
+	}
+
+# ============================================================================
+# manage_export_templates - status / install .tpz / remove installed version
+# ============================================================================
+
+const _ANDROID_ARCHITECTURES: PackedStringArray = ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]
+
+func _register_manage_export_templates(server_core: RefCounted) -> void:
+	var tool_name: String = "manage_export_templates"
+	var description: String = "Manage locally installed Godot export templates. action='status' reports the templates directory, the current editor version, which versions are installed, and the official download URL + .tpz filename for the current version; action='install' extracts an export-templates .tpz/.zip into the templates directory; action='remove' deletes an installed version directory. Works on Godot 4.6+."
+
+	var input_schema: Dictionary = {
+		"type": "object",
+		"properties": {
+			"action": {
+				"type": "string",
+				"enum": ["status", "install", "remove"],
+				"description": "Operation to perform. Default 'status'.",
+				"default": "status"
+			},
+			"tpz_path": {
+				"type": "string",
+				"description": "For action='install': absolute or res:// path to an export-templates .tpz (or .zip) archive."
+			},
+			"version": {
+				"type": "string",
+				"description": "For action='remove': the installed version directory name to delete (e.g. '4.7.0.stable')."
+			},
+			"templates_root": {
+				"type": "string",
+				"description": "Optional override for the export templates directory. Defaults to the editor's templates directory for the current platform."
+			}
+		},
+		"required": []
+	}
+
+	var output_schema: Dictionary = {
+		"type": "object",
+		"properties": {
+			"action": {"type": "string"},
+			"templates_root": {"type": "string"},
+			"current_version": {"type": "string"},
+			"version_tag": {"type": "string"},
+			"download_url": {"type": "string"},
+			"tpz_filename": {"type": "string"},
+			"matching_version_installed": {"type": "boolean"},
+			"installed_versions": {"type": "array"},
+			"installed_version": {"type": "string"},
+			"dest_dir": {"type": "string"},
+			"extracted_count": {"type": "integer"},
+			"removed_count": {"type": "integer"},
+			"files": {"type": "array"},
+			"godot_version": {"type": "string"}
+		}
+	}
+
+	var annotations: Dictionary = {
+		"readOnlyHint": false,
+		"destructiveHint": true,
+		"idempotentHint": false,
+		"openWorldHint": false
+	}
+
+	server_core.register_tool(tool_name, description, input_schema,
+						  Callable(self, "_tool_manage_export_templates"),
+						  output_schema, annotations,
+						  "supplementary", "Editor-Advanced")
+
+func _version_tag_and_tpz() -> Dictionary:
+	var info: Dictionary = Engine.get_version_info()
+	var major: int = int(info.get("major", 0))
+	var minor: int = int(info.get("minor", 0))
+	var patch: int = int(info.get("patch", 0))
+	var status: String = str(info.get("status", "stable"))
+	var short_version: String = "%d.%d" % [major, minor]
+	if patch > 0:
+		short_version += ".%d" % patch
+	var tag: String = "%s-%s" % [short_version, status]
+	var tpz_filename: String = "Godot_v%s_export_templates.tpz" % tag
+	var download_url: String = "https://github.com/godotengine/godot/releases/download/%s/%s" % [tag, tpz_filename]
+	return {
+		"version_tag": tag,
+		"tpz_filename": tpz_filename,
+		"download_url": download_url
+	}
+
+func _scan_template_versions(templates_root: String) -> Array:
+	var versions: Array[String] = []
+	if templates_root.is_empty():
+		return versions
+	var root_dir: DirAccess = DirAccess.open(templates_root)
+	if root_dir == null:
+		return versions
+	root_dir.list_dir_begin()
+	var entry: String = root_dir.get_next()
+	while entry != "":
+		if root_dir.current_is_dir() and not entry.begins_with("."):
+			versions.append(entry)
+		entry = root_dir.get_next()
+	root_dir.list_dir_end()
+	versions.sort()
+	return versions
+
+func _tool_manage_export_templates(params: Dictionary) -> Dictionary:
+	var action: String = str(params.get("action", "status")).strip_edges().to_lower()
+	if action.is_empty():
+		action = "status"
+	if not (action in ["status", "install", "remove"]):
+		return {"error": "Invalid action '%s'. Expected one of: status, install, remove." % action}
+
+	var templates_root: String = str(params.get("templates_root", "")).strip_edges()
+	if templates_root.is_empty():
+		templates_root = _get_export_templates_root()
+	elif templates_root.begins_with("res://") or templates_root.begins_with("user://"):
+		templates_root = ProjectSettings.globalize_path(templates_root)
+	if templates_root.is_empty():
+		return {"error": "Could not determine export templates directory; provide templates_root."}
+
+	var version_meta: Dictionary = _version_tag_and_tpz()
+	var godot_version: String = str(Engine.get_version_info().get("string", ""))
+
+	if action == "status":
+		var info: Dictionary = Engine.get_version_info()
+		var base_version: String = "%d.%d.%d.%s" % [
+			int(info.get("major", 0)),
+			int(info.get("minor", 0)),
+			int(info.get("patch", 0)),
+			str(info.get("status", "stable"))
+		]
+		var installed: Array = _scan_template_versions(templates_root)
+		return {
+			"action": "status",
+			"templates_root": templates_root,
+			"current_version": base_version,
+			"version_tag": version_meta["version_tag"],
+			"download_url": version_meta["download_url"],
+			"tpz_filename": version_meta["tpz_filename"],
+			"matching_version_installed": installed.has(base_version) or installed.has(base_version + ".mono"),
+			"installed_versions": installed,
+			"godot_version": godot_version
+		}
+
+	if action == "install":
+		var tpz_path: String = str(params.get("tpz_path", "")).strip_edges()
+		if tpz_path.is_empty():
+			return {"error": "action='install' requires tpz_path"}
+		if tpz_path.begins_with("res://") or tpz_path.begins_with("user://"):
+			tpz_path = ProjectSettings.globalize_path(tpz_path)
+		if not FileAccess.file_exists(tpz_path):
+			return {"error": "Template archive not found: " + tpz_path}
+
+		var reader: ZIPReader = ZIPReader.new()
+		var open_error: Error = reader.open(tpz_path)
+		if open_error != OK:
+			return {"error": "Failed to open archive: " + error_string(open_error)}
+
+		var archive_files: PackedStringArray = reader.get_files()
+		# Determine the installed version: prefer templates/version.txt inside the archive.
+		var installed_version: String = version_meta["version_tag"]
+		for f in archive_files:
+			if f.get_file() == "version.txt":
+				var raw: PackedByteArray = reader.read_file(f)
+				var txt: String = raw.get_string_from_utf8().strip_edges()
+				if not txt.is_empty():
+					installed_version = txt
+				break
+
+		var dest_dir: String = templates_root.path_join(installed_version)
+		var mkdir_error: Error = DirAccess.make_dir_recursive_absolute(dest_dir)
+		if mkdir_error != OK and not DirAccess.dir_exists_absolute(dest_dir):
+			reader.close()
+			return {"error": "Failed to create destination dir: " + error_string(mkdir_error)}
+
+		var extracted: Array[String] = []
+		for entry in archive_files:
+			if entry.ends_with("/"):
+				continue
+			# Strip a leading "templates/" prefix as shipped inside official .tpz files.
+			var rel: String = entry
+			if rel.begins_with("templates/"):
+				rel = rel.substr("templates/".length())
+			if rel.is_empty():
+				continue
+			var data: PackedByteArray = reader.read_file(entry)
+			var out_path: String = dest_dir.path_join(rel)
+			var out_base: String = out_path.get_base_dir()
+			if not out_base.is_empty():
+				DirAccess.make_dir_recursive_absolute(out_base)
+			var out_file: FileAccess = FileAccess.open(out_path, FileAccess.WRITE)
+			if out_file == null:
+				continue
+			out_file.store_buffer(data)
+			out_file.close()
+			extracted.append(rel)
+		reader.close()
+		extracted.sort()
+
+		if extracted.is_empty():
+			return {"error": "Archive contained no extractable files: " + tpz_path}
+
+		return {
+			"action": "install",
+			"templates_root": templates_root,
+			"installed_version": installed_version,
+			"dest_dir": dest_dir,
+			"extracted_count": extracted.size(),
+			"files": extracted,
+			"godot_version": godot_version
+		}
+
+	# action == "remove"
+	var version: String = str(params.get("version", "")).strip_edges()
+	if version.is_empty():
+		return {"error": "action='remove' requires version"}
+	if version.contains("/") or version.contains("\\") or version == ".." or version.contains(".."):
+		return {"error": "Invalid version directory name: " + version}
+	var target_dir: String = templates_root.path_join(version)
+	if not DirAccess.dir_exists_absolute(target_dir):
+		return {"error": "Installed version not found: " + target_dir}
+
+	var removed: int = _remove_dir_recursive(target_dir)
+	return {
+		"action": "remove",
+		"templates_root": templates_root,
+		"installed_version": version,
+		"dest_dir": target_dir,
+		"removed_count": removed,
+		"godot_version": godot_version
+	}
+
+func _remove_dir_recursive(path: String) -> int:
+	var count: int = 0
+	var dir: DirAccess = DirAccess.open(path)
+	if dir == null:
+		return 0
+	dir.list_dir_begin()
+	var entry: String = dir.get_next()
+	while entry != "":
+		if entry == "." or entry == "..":
+			entry = dir.get_next()
+			continue
+		var child: String = path.path_join(entry)
+		if dir.current_is_dir():
+			count += _remove_dir_recursive(child)
+		else:
+			if DirAccess.remove_absolute(child) == OK:
+				count += 1
+		entry = dir.get_next()
+	dir.list_dir_end()
+	DirAccess.remove_absolute(path)
+	return count
+
+# ============================================================================
+# configure_android_export - set Android-specific export preset options
+# ============================================================================
+
+func _register_configure_android_export(server_core: RefCounted) -> void:
+	var tool_name: String = "configure_android_export"
+	var description: String = "Configure Android-specific options on an existing Android export preset in export_presets.cfg (e.g. package name, app name, version code/name, Gradle build, APK/AAB format, min/target SDK, target architectures, keystore file paths). Only sets the fields you provide; the preset's platform must be 'Android'. Keystore passwords are intentionally NOT written here — set them via the GODOT_ANDROID_KEYSTORE_* environment variables. Works on Godot 4.6+."
+
+	var input_schema: Dictionary = {
+		"type": "object",
+		"properties": {
+			"preset": {"type": "string", "description": "Preset name or section (e.g. 'Android' or 'preset.0')."},
+			"config_path": {"type": "string", "description": "Path to export_presets.cfg. Default 'res://export_presets.cfg'.", "default": "res://export_presets.cfg"},
+			"package_name": {"type": "string", "description": "Reverse-DNS application id -> package/unique_name (e.g. 'com.example.game')."},
+			"app_name": {"type": "string", "description": "Display name -> package/name."},
+			"version_code": {"type": "integer", "description": "Integer version code -> version/code."},
+			"version_name": {"type": "string", "description": "Human version string -> version/name."},
+			"use_gradle_build": {"type": "boolean", "description": "Toggle gradle_build/use_gradle_build."},
+			"export_format": {"type": "string", "enum": ["apk", "aab"], "description": "gradle_build/export_format (apk=0, aab=1)."},
+			"min_sdk": {"type": "string", "description": "gradle_build/min_sdk."},
+			"target_sdk": {"type": "string", "description": "gradle_build/target_sdk."},
+			"architectures": {"type": "array", "description": "Subset of ['arm64-v8a','armeabi-v7a','x86','x86_64']; listed archs are enabled, the rest disabled."},
+			"keystore_release": {"type": "string", "description": "Path to release keystore -> keystore/release (path only, no password)."},
+			"keystore_debug": {"type": "string", "description": "Path to debug keystore -> keystore/debug (path only, no password)."}
+		},
+		"required": ["preset"]
+	}
+
+	var output_schema: Dictionary = {
+		"type": "object",
+		"properties": {
+			"status": {"type": "string"},
+			"config_path": {"type": "string"},
+			"preset": {"type": "object"},
+			"changes": {"type": "array"},
+			"change_count": {"type": "integer"},
+			"godot_version": {"type": "string"}
+		}
+	}
+
+	var annotations: Dictionary = {
+		"readOnlyHint": false,
+		"destructiveHint": false,
+		"idempotentHint": true,
+		"openWorldHint": false
+	}
+
+	server_core.register_tool(tool_name, description, input_schema,
+						  Callable(self, "_tool_configure_android_export"),
+						  output_schema, annotations,
+						  "supplementary", "Editor-Advanced")
+
+func _tool_configure_android_export(params: Dictionary) -> Dictionary:
+	var preset_name: String = str(params.get("preset", "")).strip_edges()
+	if preset_name.is_empty():
+		return {"error": "Missing required parameter: preset"}
+
+	var config_path: String = str(params.get("config_path", "res://export_presets.cfg")).strip_edges()
+	if config_path.is_empty():
+		config_path = "res://export_presets.cfg"
+	if not config_path.to_lower().ends_with(".cfg"):
+		return {"error": "config_path must point to a .cfg file"}
+	if not FileAccess.file_exists(config_path):
+		return {"error": "Export config not found: " + config_path}
+
+	var config: ConfigFile = ConfigFile.new()
+	var load_error: Error = config.load(config_path)
+	if load_error != OK:
+		return {"error": "Failed to load export config: " + error_string(load_error)}
+
+	# Locate the preset section by name or section id.
+	var section: String = ""
+	for raw_section in config.get_sections():
+		var sname: String = str(raw_section)
+		if not sname.begins_with("preset.") or sname.ends_with(".options"):
+			continue
+		if sname == preset_name or str(config.get_value(sname, "name", "")) == preset_name:
+			section = sname
+			break
+	if section.is_empty():
+		return {"error": "Export preset not found: " + preset_name}
+
+	var platform: String = str(config.get_value(section, "platform", ""))
+	if platform != "Android":
+		return {"error": "Preset '%s' has platform '%s'; configure_android_export only supports Android presets." % [preset_name, platform]}
+
+	var options_section: String = section + ".options"
+	var changes: Array = []
+
+	if params.has("package_name"):
+		var v: String = str(params["package_name"]).strip_edges()
+		config.set_value(options_section, "package/unique_name", v)
+		changes.append({"key": "package/unique_name", "value": v})
+	if params.has("app_name"):
+		var v2: String = str(params["app_name"])
+		config.set_value(options_section, "package/name", v2)
+		changes.append({"key": "package/name", "value": v2})
+	if params.has("version_code"):
+		var vc: int = int(params["version_code"])
+		config.set_value(options_section, "version/code", vc)
+		changes.append({"key": "version/code", "value": vc})
+	if params.has("version_name"):
+		var vn: String = str(params["version_name"])
+		config.set_value(options_section, "version/name", vn)
+		changes.append({"key": "version/name", "value": vn})
+	if params.has("use_gradle_build"):
+		var ug: bool = bool(params["use_gradle_build"])
+		config.set_value(options_section, "gradle_build/use_gradle_build", ug)
+		changes.append({"key": "gradle_build/use_gradle_build", "value": ug})
+	if params.has("export_format"):
+		var fmt: String = str(params["export_format"]).strip_edges().to_lower()
+		if not (fmt in ["apk", "aab"]):
+			return {"error": "Invalid export_format '%s'. Expected 'apk' or 'aab'." % fmt}
+		var fmt_value: int = 1 if fmt == "aab" else 0
+		config.set_value(options_section, "gradle_build/export_format", fmt_value)
+		changes.append({"key": "gradle_build/export_format", "value": fmt_value})
+	if params.has("min_sdk"):
+		var ms: String = str(params["min_sdk"]).strip_edges()
+		config.set_value(options_section, "gradle_build/min_sdk", ms)
+		changes.append({"key": "gradle_build/min_sdk", "value": ms})
+	if params.has("target_sdk"):
+		var ts: String = str(params["target_sdk"]).strip_edges()
+		config.set_value(options_section, "gradle_build/target_sdk", ts)
+		changes.append({"key": "gradle_build/target_sdk", "value": ts})
+	if params.has("architectures"):
+		var arch_param = params["architectures"]
+		if not (arch_param is Array):
+			return {"error": "architectures must be an array of strings"}
+		var requested: Array[String] = []
+		for a in arch_param:
+			var an: String = str(a).strip_edges()
+			if not (an in _ANDROID_ARCHITECTURES):
+				return {"error": "Invalid architecture '%s'. Expected subset of: %s" % [an, ", ".join(_ANDROID_ARCHITECTURES)]}
+			requested.append(an)
+		for arch in _ANDROID_ARCHITECTURES:
+			var enabled: bool = requested.has(arch)
+			config.set_value(options_section, "architectures/" + arch, enabled)
+			changes.append({"key": "architectures/" + arch, "value": enabled})
+	if params.has("keystore_release"):
+		var kr: String = str(params["keystore_release"]).strip_edges()
+		config.set_value(options_section, "keystore/release", kr)
+		changes.append({"key": "keystore/release", "value": kr})
+	if params.has("keystore_debug"):
+		var kd: String = str(params["keystore_debug"]).strip_edges()
+		config.set_value(options_section, "keystore/debug", kd)
+		changes.append({"key": "keystore/debug", "value": kd})
+
+	if changes.is_empty():
+		return {"error": "No Android options provided; nothing to configure."}
+
+	var save_error: Error = config.save(config_path)
+	if save_error != OK:
+		return {"error": "Failed to save export config: " + error_string(save_error)}
+
+	return {
+		"status": "success",
+		"config_path": config_path,
+		"preset": {
+			"section": section,
+			"name": str(config.get_value(section, "name", "")),
+			"platform": platform
+		},
+		"changes": changes,
+		"change_count": changes.size(),
+		"godot_version": str(Engine.get_version_info().get("string", ""))
 	}

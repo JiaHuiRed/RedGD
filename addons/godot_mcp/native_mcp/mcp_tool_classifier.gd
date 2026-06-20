@@ -92,6 +92,8 @@ func _build_classifications() -> void:
 		{"name": "inspect_export_templates", "category": "supplementary", "group": "Editor-Advanced"},
 		{"name": "validate_export_preset", "category": "supplementary", "group": "Editor-Advanced"},
 		{"name": "run_export", "category": "supplementary", "group": "Editor-Advanced"},
+		{"name": "manage_export_templates", "category": "supplementary", "group": "Editor-Advanced"},
+		{"name": "configure_android_export", "category": "supplementary", "group": "Editor-Advanced"},
 		{"name": "get_unsaved_changes", "category": "supplementary", "group": "Editor-Advanced"},
 		{"name": "save_all_scripts", "category": "supplementary", "group": "Editor-Advanced"},
 		{"name": "reload_open_scripts", "category": "supplementary", "group": "Editor-Advanced"},
