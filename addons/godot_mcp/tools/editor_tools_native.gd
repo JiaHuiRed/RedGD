@@ -117,6 +117,11 @@ func register_tools(server_core: RefCounted) -> void:
 	_register_inspect_export_templates(server_core)
 	_register_validate_export_preset(server_core)
 	_register_run_export(server_core)
+	_register_get_unsaved_changes(server_core)
+	_register_save_all_scripts(server_core)
+	_register_reload_open_scripts(server_core)
+	_register_close_script_tab(server_core)
+	_register_get_import_status(server_core)
 
 # ============================================================================
 # get_editor_state - 获取编辑器状态
@@ -1517,3 +1522,336 @@ func _tool_reload_project(params: Dictionary) -> Dictionary:
 	else:
 		fs.scan_sources()
 		return {"status": "success", "scan_type": "sources_only"}
+
+# ============================================================================
+# Editor buffer sync (Godot 4.7 APIs with graceful 4.6 degradation)
+# ============================================================================
+
+func _first_supported_method(obj: Object, candidates: Array) -> String:
+	if obj == null:
+		return ""
+	for candidate in candidates:
+		if obj.has_method(candidate):
+			return candidate
+	return ""
+
+func _engine_version_string() -> String:
+	return str(Engine.get_version_info().get("string", ""))
+
+# ============================================================================
+# get_unsaved_changes - 列出编辑器中未保存的场景与脚本
+# ============================================================================
+
+func _register_get_unsaved_changes(server_core: RefCounted) -> void:
+	var tool_name: String = "get_unsaved_changes"
+	var description: String = "List scenes and scripts that have unsaved edits in the editor buffers, so a caller can avoid overwriting in-editor work before writing files. Uses Godot 4.7 APIs (EditorInterface.get_unsaved_scenes / ScriptEditor.get_unsaved_files); on older versions the corresponding *_supported flag is false."
+
+	var input_schema: Dictionary = {
+		"type": "object",
+		"properties": {}
+	}
+
+	var output_schema: Dictionary = {
+		"type": "object",
+		"properties": {
+			"status": {"type": "string"},
+			"unsaved_scenes": {"type": "array", "items": {"type": "string"}},
+			"unsaved_scripts": {"type": "array", "items": {"type": "string"}},
+			"unsaved_scene_count": {"type": "integer"},
+			"unsaved_script_count": {"type": "integer"},
+			"has_unsaved_changes": {"type": "boolean"},
+			"scenes_supported": {"type": "boolean"},
+			"scripts_supported": {"type": "boolean"}
+		}
+	}
+
+	var annotations: Dictionary = {
+		"readOnlyHint": true,
+		"destructiveHint": false,
+		"idempotentHint": true,
+		"openWorldHint": false
+	}
+
+	server_core.register_tool(tool_name, description, input_schema,
+		Callable(self, "_tool_get_unsaved_changes"),
+		output_schema, annotations,
+		"supplementary", "Editor-Advanced")
+
+func _tool_get_unsaved_changes(_params: Dictionary) -> Dictionary:
+	var editor_interface: EditorInterface = _get_editor_interface()
+	if not editor_interface:
+		return {"error": "Editor interface not available"}
+
+	var unsaved_scenes: Array = []
+	var unsaved_scripts: Array = []
+	var scenes_supported: bool = false
+	var scripts_supported: bool = false
+
+	var scenes_method: String = _first_supported_method(editor_interface, ["get_unsaved_scenes"])
+	if scenes_method != "":
+		scenes_supported = true
+		for scene_path in editor_interface.call(scenes_method):
+			unsaved_scenes.append(str(scene_path))
+
+	var script_editor: ScriptEditor = editor_interface.get_script_editor()
+	if script_editor:
+		var scripts_method: String = _first_supported_method(script_editor, ["get_unsaved_files", "get_unsaved_scripts"])
+		if scripts_method != "":
+			scripts_supported = true
+			for script_path in script_editor.call(scripts_method):
+				unsaved_scripts.append(str(script_path))
+
+	return {
+		"status": "success",
+		"unsaved_scenes": unsaved_scenes,
+		"unsaved_scripts": unsaved_scripts,
+		"unsaved_scene_count": unsaved_scenes.size(),
+		"unsaved_script_count": unsaved_scripts.size(),
+		"has_unsaved_changes": unsaved_scenes.size() > 0 or unsaved_scripts.size() > 0,
+		"scenes_supported": scenes_supported,
+		"scripts_supported": scripts_supported
+	}
+
+# ============================================================================
+# save_all_scripts - 保存所有打开的脚本缓冲区
+# ============================================================================
+
+func _register_save_all_scripts(server_core: RefCounted) -> void:
+	var tool_name: String = "save_all_scripts"
+	var description: String = "Save every script currently open in the editor's script editor (Godot 4.7 ScriptEditor.save_all_scripts). Returns status 'unsupported' on Godot versions that do not expose the API."
+
+	var input_schema: Dictionary = {
+		"type": "object",
+		"properties": {}
+	}
+
+	var output_schema: Dictionary = {
+		"type": "object",
+		"properties": {
+			"status": {"type": "string"},
+			"message": {"type": "string"},
+			"godot_version": {"type": "string"}
+		}
+	}
+
+	var annotations: Dictionary = {
+		"readOnlyHint": false,
+		"destructiveHint": false,
+		"idempotentHint": true,
+		"openWorldHint": false
+	}
+
+	server_core.register_tool(tool_name, description, input_schema,
+		Callable(self, "_tool_save_all_scripts"),
+		output_schema, annotations,
+		"supplementary", "Editor-Advanced")
+
+func _tool_save_all_scripts(_params: Dictionary) -> Dictionary:
+	var editor_interface: EditorInterface = _get_editor_interface()
+	if not editor_interface:
+		return {"error": "Editor interface not available"}
+
+	var script_editor: ScriptEditor = editor_interface.get_script_editor()
+	if not script_editor:
+		return {"error": "Script editor not available"}
+
+	var method_name: String = _first_supported_method(script_editor, ["save_all_scripts"])
+	if method_name == "":
+		return {
+			"status": "unsupported",
+			"message": "ScriptEditor.save_all_scripts() requires Godot 4.7 or newer.",
+			"godot_version": _engine_version_string()
+		}
+
+	script_editor.call(method_name)
+	return {"status": "success", "message": "Saved all open scripts."}
+
+# ============================================================================
+# reload_open_scripts - 从磁盘重新加载已打开的脚本缓冲区
+# ============================================================================
+
+func _register_reload_open_scripts(server_core: RefCounted) -> void:
+	var tool_name: String = "reload_open_scripts"
+	var description: String = "Reload the editor's open script buffers from disk (Godot 4.7 ScriptEditor.reload_scripts). Call this after the MCP server rewrites a .gd/.cs file so the editor does not later overwrite those changes with a stale buffer. Returns status 'unsupported' on older Godot versions."
+
+	var input_schema: Dictionary = {
+		"type": "object",
+		"properties": {}
+	}
+
+	var output_schema: Dictionary = {
+		"type": "object",
+		"properties": {
+			"status": {"type": "string"},
+			"message": {"type": "string"},
+			"godot_version": {"type": "string"}
+		}
+	}
+
+	var annotations: Dictionary = {
+		"readOnlyHint": false,
+		"destructiveHint": false,
+		"idempotentHint": true,
+		"openWorldHint": false
+	}
+
+	server_core.register_tool(tool_name, description, input_schema,
+		Callable(self, "_tool_reload_open_scripts"),
+		output_schema, annotations,
+		"supplementary", "Editor-Advanced")
+
+func _tool_reload_open_scripts(_params: Dictionary) -> Dictionary:
+	var editor_interface: EditorInterface = _get_editor_interface()
+	if not editor_interface:
+		return {"error": "Editor interface not available"}
+
+	var script_editor: ScriptEditor = editor_interface.get_script_editor()
+	if not script_editor:
+		return {"error": "Script editor not available"}
+
+	var method_name: String = _first_supported_method(script_editor, ["reload_scripts", "reload_open_files"])
+	if method_name == "":
+		return {
+			"status": "unsupported",
+			"message": "ScriptEditor script-reload API requires Godot 4.7 or newer.",
+			"godot_version": _engine_version_string()
+		}
+
+	script_editor.call(method_name)
+	return {"status": "success", "message": "Reloaded open scripts from disk."}
+
+# ============================================================================
+# close_script_tab - 关闭脚本编辑器中的标签页
+# ============================================================================
+
+func _register_close_script_tab(server_core: RefCounted) -> void:
+	var tool_name: String = "close_script_tab"
+	var description: String = "Close a script tab in the editor's script editor (Godot 4.7 ScriptEditor.close_file). With no script_path it closes the currently focused script; with script_path it focuses that script first, then closes it. Returns status 'unsupported' on older Godot versions."
+
+	var input_schema: Dictionary = {
+		"type": "object",
+		"properties": {
+			"script_path": {
+				"type": "string",
+				"description": "Optional path to the script to close (e.g. 'res://scripts/player.gd'). Defaults to the currently focused script."
+			}
+		}
+	}
+
+	var output_schema: Dictionary = {
+		"type": "object",
+		"properties": {
+			"status": {"type": "string"},
+			"closed_script": {"type": "string"},
+			"message": {"type": "string"},
+			"godot_version": {"type": "string"}
+		}
+	}
+
+	var annotations: Dictionary = {
+		"readOnlyHint": false,
+		"destructiveHint": false,
+		"idempotentHint": false,
+		"openWorldHint": false
+	}
+
+	server_core.register_tool(tool_name, description, input_schema,
+		Callable(self, "_tool_close_script_tab"),
+		output_schema, annotations,
+		"supplementary", "Editor-Advanced")
+
+func _tool_close_script_tab(params: Dictionary) -> Dictionary:
+	var editor_interface: EditorInterface = _get_editor_interface()
+	if not editor_interface:
+		return {"error": "Editor interface not available"}
+
+	var script_editor: ScriptEditor = editor_interface.get_script_editor()
+	if not script_editor:
+		return {"error": "Script editor not available"}
+
+	var script_path: String = str(params.get("script_path", "")).strip_edges()
+	if not script_path.is_empty():
+		var validation: Dictionary = PathValidator.validate_file_path(script_path, [".gd", ".cs"])
+		if not validation["valid"]:
+			return {"error": "Invalid path: " + validation["error"]}
+		script_path = validation["sanitized"]
+		if not FileAccess.file_exists(script_path):
+			return {"error": "Script file not found: " + script_path}
+		var script_resource: Script = load(script_path)
+		if not script_resource:
+			return {"error": "Failed to load script: " + script_path}
+		editor_interface.edit_script(script_resource, 0, 0, false)
+
+	var method_name: String = _first_supported_method(script_editor, ["close_file"])
+	if method_name == "":
+		return {
+			"status": "unsupported",
+			"message": "ScriptEditor.close_file() requires Godot 4.7 or newer.",
+			"godot_version": _engine_version_string()
+		}
+
+	script_editor.call(method_name)
+	return {"status": "success", "closed_script": script_path}
+
+# ============================================================================
+# get_import_status - 查询资源导入/扫描状态
+# ============================================================================
+
+func _register_get_import_status(server_core: RefCounted) -> void:
+	var tool_name: String = "get_import_status"
+	var description: String = "Report whether the EditorFileSystem is currently scanning or importing assets, so a caller can wait for a stable state before running the project or tests. The 'importing' field uses Godot 4.7 EditorFileSystem.is_importing; on older versions importing_supported is false and importing is null."
+
+	var input_schema: Dictionary = {
+		"type": "object",
+		"properties": {}
+	}
+
+	var output_schema: Dictionary = {
+		"type": "object",
+		"properties": {
+			"status": {"type": "string"},
+			"scanning": {"type": "boolean"},
+			"scanning_progress": {"type": "number"},
+			"importing": {"type": ["boolean", "null"]},
+			"importing_supported": {"type": "boolean"},
+			"busy": {"type": "boolean"}
+		}
+	}
+
+	var annotations: Dictionary = {
+		"readOnlyHint": true,
+		"destructiveHint": false,
+		"idempotentHint": true,
+		"openWorldHint": false
+	}
+
+	server_core.register_tool(tool_name, description, input_schema,
+		Callable(self, "_tool_get_import_status"),
+		output_schema, annotations,
+		"supplementary", "Editor-Advanced")
+
+func _tool_get_import_status(_params: Dictionary) -> Dictionary:
+	var editor_interface: EditorInterface = _get_editor_interface()
+	if not editor_interface:
+		return {"error": "Editor interface not available"}
+
+	var fs: EditorFileSystem = editor_interface.get_resource_filesystem()
+	if not fs:
+		return {"error": "Failed to get EditorFileSystem"}
+
+	var scanning: bool = fs.is_scanning()
+	var importing_supported: bool = false
+	var importing: Variant = null
+	var importing_method: String = _first_supported_method(fs, ["is_importing"])
+	if importing_method != "":
+		importing_supported = true
+		importing = bool(fs.call(importing_method))
+
+	return {
+		"status": "success",
+		"scanning": scanning,
+		"scanning_progress": fs.get_scanning_progress(),
+		"importing": importing,
+		"importing_supported": importing_supported,
+		"busy": scanning or importing == true
+	}

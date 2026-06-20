@@ -162,5 +162,10 @@
   "list_export_presets": "List export presets from export_presets.cfg.",
   "inspect_export_templates": "Inspect locally installed Godot export templates for the current editor version.",
   "validate_export_preset": "Validate an export preset against export_presets.cfg and local template availability.",
-  "run_export": "Run a Godot CLI export for a configured preset."
+  "run_export": "Run a Godot CLI export for a configured preset.",
+  "get_unsaved_changes": "List scenes and scripts with unsaved edits in the editor buffers (Godot 4.7 APIs; *_supported flags report availability).",
+  "save_all_scripts": "Save every script currently open in the script editor (Godot 4.7 ScriptEditor.save_all_scripts).",
+  "reload_open_scripts": "Reload the editor's open script buffers from disk so the editor does not overwrite externally rewritten files (Godot 4.7).",
+  "close_script_tab": "Close a script tab in the editor's script editor, optionally targeting a specific script path (Godot 4.7).",
+  "get_import_status": "Report whether the EditorFileSystem is currently scanning or importing assets (importing field requires Godot 4.7)."
 }
