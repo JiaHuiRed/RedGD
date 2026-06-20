@@ -185,3 +185,141 @@ func test_editor_sync_tools_use_has_method_guards():
 	assert_true(source_code.contains("save_all_scripts"), "save_all_scripts should call ScriptEditor.save_all_scripts")
 	assert_true(source_code.contains("is_importing"), "get_import_status should probe EditorFileSystem.is_importing")
 	assert_true(source_code.contains("\"unsupported\""), "Editor sync tools should degrade with an 'unsupported' status")
+
+# ---------------------------------------------------------------------------
+# manage_export_templates
+# ---------------------------------------------------------------------------
+
+func _unique_user_path(suffix: String) -> String:
+	var name: String = "mcp_test_%d_%d%s" % [Time.get_ticks_usec(), randi() % 100000, suffix]
+	return ProjectSettings.globalize_path("user://".path_join(name))
+
+func test_manage_export_templates_invalid_action():
+	var result: Dictionary = _editor_tools._tool_manage_export_templates({"action": "frobnicate"})
+	assert_true(result.has("error"), "Invalid action should return an error")
+	assert_true(str(result["error"]).contains("Invalid action"), "Error should mention invalid action")
+
+func test_manage_export_templates_status():
+	var root: String = _unique_user_path("_templates")
+	DirAccess.make_dir_recursive_absolute(root)
+	var result: Dictionary = _editor_tools._tool_manage_export_templates({"action": "status", "templates_root": root})
+	assert_eq(result.get("action", ""), "status", "action should be status")
+	assert_eq(result.get("templates_root", ""), root, "Should echo the overridden templates_root")
+	assert_true(str(result.get("download_url", "")).begins_with("https://github.com/godotengine/godot/releases/download/"), "download_url should point at the GitHub release")
+	assert_true(str(result.get("tpz_filename", "")).ends_with("_export_templates.tpz"), "tpz_filename should end with _export_templates.tpz")
+	assert_eq((result.get("installed_versions", []) as Array).size(), 0, "Empty override root should report no installed versions")
+	assert_false(bool(result.get("matching_version_installed", true)), "Empty root should not have matching version installed")
+	_editor_tools._remove_dir_recursive(root)
+
+func test_manage_export_templates_install_requires_tpz():
+	var result: Dictionary = _editor_tools._tool_manage_export_templates({"action": "install"})
+	assert_true(result.has("error"), "install without tpz_path should error")
+	assert_true(str(result["error"]).contains("tpz_path"), "Error should mention tpz_path")
+
+func test_manage_export_templates_remove_missing():
+	var root: String = _unique_user_path("_templates")
+	DirAccess.make_dir_recursive_absolute(root)
+	var result: Dictionary = _editor_tools._tool_manage_export_templates({"action": "remove", "version": "9.9.9.nope", "templates_root": root})
+	assert_true(result.has("error"), "Removing a missing version should error")
+	assert_true(str(result["error"]).contains("not found"), "Error should mention not found")
+	_editor_tools._remove_dir_recursive(root)
+
+func test_manage_export_templates_install_and_remove_round_trip():
+	var root: String = _unique_user_path("_templates")
+	DirAccess.make_dir_recursive_absolute(root)
+	var tpz: String = _unique_user_path(".tpz")
+	var packer: ZIPPacker = ZIPPacker.new()
+	assert_eq(packer.open(tpz), OK, "Should create test .tpz")
+	packer.start_file("templates/version.txt")
+	packer.write_file("4.7.0.test".to_utf8_buffer())
+	packer.close_file()
+	packer.start_file("templates/windows_release_x86_64.exe")
+	packer.write_file("FAKE_TEMPLATE_BYTES".to_utf8_buffer())
+	packer.close_file()
+	packer.close()
+
+	var installed: Dictionary = _editor_tools._tool_manage_export_templates({"action": "install", "tpz_path": tpz, "templates_root": root})
+	assert_eq(installed.get("action", ""), "install", "action should be install")
+	assert_eq(installed.get("installed_version", ""), "4.7.0.test", "Version should come from templates/version.txt")
+	assert_eq(int(installed.get("extracted_count", 0)), 2, "Both archive files should be extracted")
+	var files: Array = installed.get("files", [])
+	assert_true(files.has("version.txt"), "templates/ prefix should be stripped from version.txt")
+	assert_true(files.has("windows_release_x86_64.exe"), "Template binary should be extracted")
+	assert_true(FileAccess.file_exists(root.path_join("4.7.0.test").path_join("windows_release_x86_64.exe")), "Extracted file should exist on disk")
+
+	var status: Dictionary = _editor_tools._tool_manage_export_templates({"action": "status", "templates_root": root})
+	assert_true((status.get("installed_versions", []) as Array).has("4.7.0.test"), "Status should list the installed version")
+
+	var removed: Dictionary = _editor_tools._tool_manage_export_templates({"action": "remove", "version": "4.7.0.test", "templates_root": root})
+	assert_eq(removed.get("action", ""), "remove", "action should be remove")
+	assert_true(int(removed.get("removed_count", 0)) >= 2, "Should remove the extracted files")
+	assert_false(DirAccess.dir_exists_absolute(root.path_join("4.7.0.test")), "Version dir should be gone after remove")
+
+	DirAccess.remove_absolute(tpz)
+	_editor_tools._remove_dir_recursive(root)
+
+# ---------------------------------------------------------------------------
+# configure_android_export
+# ---------------------------------------------------------------------------
+
+func _write_export_cfg(path: String, platform: String) -> void:
+	var config: ConfigFile = ConfigFile.new()
+	config.set_value("preset.0", "name", "TestPreset")
+	config.set_value("preset.0", "platform", platform)
+	config.set_value("preset.0", "runnable", true)
+	config.set_value("preset.0", "export_path", "")
+	config.set_value("preset.0.options", "custom_template/debug", "")
+	config.save(path)
+
+func test_configure_android_export_requires_preset():
+	var result: Dictionary = _editor_tools._tool_configure_android_export({})
+	assert_true(result.has("error"), "Missing preset should error")
+	assert_true(str(result["error"]).contains("preset"), "Error should mention preset")
+
+func test_configure_android_export_missing_config():
+	var result: Dictionary = _editor_tools._tool_configure_android_export({"preset": "TestPreset", "config_path": "user://does_not_exist_mcp.cfg"})
+	assert_true(result.has("error"), "Missing config file should error")
+	assert_true(str(result["error"]).contains("not found"), "Error should mention not found")
+
+func test_configure_android_export_rejects_non_android():
+	var cfg: String = _unique_user_path(".cfg")
+	_write_export_cfg(cfg, "Windows Desktop")
+	var result: Dictionary = _editor_tools._tool_configure_android_export({"preset": "TestPreset", "config_path": cfg, "package_name": "com.example.app"})
+	assert_true(result.has("error"), "Non-Android preset should error")
+	assert_true(str(result["error"]).contains("Android"), "Error should mention Android-only support")
+	DirAccess.remove_absolute(cfg)
+
+func test_configure_android_export_no_fields():
+	var cfg: String = _unique_user_path(".cfg")
+	_write_export_cfg(cfg, "Android")
+	var result: Dictionary = _editor_tools._tool_configure_android_export({"preset": "TestPreset", "config_path": cfg})
+	assert_true(result.has("error"), "No option fields should error")
+	assert_true(str(result["error"]).contains("nothing to configure"), "Error should explain nothing to configure")
+	DirAccess.remove_absolute(cfg)
+
+func test_configure_android_export_writes_options():
+	var cfg: String = _unique_user_path(".cfg")
+	_write_export_cfg(cfg, "Android")
+	var result: Dictionary = _editor_tools._tool_configure_android_export({
+		"preset": "TestPreset",
+		"config_path": cfg,
+		"package_name": "com.example.game",
+		"version_code": 42,
+		"version_name": "1.2.3",
+		"use_gradle_build": true,
+		"export_format": "aab",
+		"architectures": ["arm64-v8a"]
+	})
+	assert_eq(result.get("status", ""), "success", "Configure should succeed")
+	assert_true(int(result.get("change_count", 0)) >= 6, "Should record all applied changes")
+
+	var verify: ConfigFile = ConfigFile.new()
+	assert_eq(verify.load(cfg), OK, "Should reload written cfg")
+	assert_eq(str(verify.get_value("preset.0.options", "package/unique_name", "")), "com.example.game", "package/unique_name should be written")
+	assert_eq(int(verify.get_value("preset.0.options", "version/code", 0)), 42, "version/code should be written")
+	assert_eq(str(verify.get_value("preset.0.options", "version/name", "")), "1.2.3", "version/name should be written")
+	assert_eq(bool(verify.get_value("preset.0.options", "gradle_build/use_gradle_build", false)), true, "gradle_build/use_gradle_build should be written")
+	assert_eq(int(verify.get_value("preset.0.options", "gradle_build/export_format", -1)), 1, "export_format aab should map to 1")
+	assert_eq(bool(verify.get_value("preset.0.options", "architectures/arm64-v8a", false)), true, "Listed architecture should be enabled")
+	assert_eq(bool(verify.get_value("preset.0.options", "architectures/x86_64", true)), false, "Unlisted architecture should be disabled")
+	DirAccess.remove_absolute(cfg)
