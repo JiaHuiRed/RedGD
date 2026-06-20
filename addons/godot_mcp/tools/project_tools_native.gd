@@ -4,7 +4,10 @@
 class_name ProjectToolsNative
 extends RefCounted
 
+const MAX_CONCURRENT_TEST_JOBS: int = 4
+
 var _editor_interface: EditorInterface = null
+var _test_runner: AsyncJobRunner = AsyncJobRunner.new()
 
 func initialize(editor_interface: EditorInterface) -> void:
 	_editor_interface = editor_interface
@@ -649,12 +652,12 @@ func _tool_list_project_tests(params: Dictionary) -> Dictionary:
 func _register_run_project_test(server_core: RefCounted) -> void:
 	server_core.register_tool(
 		"run_project_test",
-		"Run a single project test script. Python integration tests are executed with python. GUT unit tests are executed through Godot headless when addons/gut is available.",
+		"Run a single project test script without blocking the editor. The first call starts the run on a background thread and returns status 'pending'; call again with the same test_path to poll for the finished result. Python integration tests are executed with python. GUT unit tests are executed through Godot headless when addons/gut is available.",
 		{
 			"type": "object",
 			"properties": {
 				"test_path": {"type": "string", "description": "res:// path to a project test file under test/."},
-				"timeout_ms": {"type": "integer", "description": "Reserved timeout hint for the caller. The process itself runs synchronously."}
+				"timeout_ms": {"type": "integer", "description": "Reserved timeout hint for the caller."}
 			},
 			"required": ["test_path"]
 		},
@@ -662,10 +665,11 @@ func _register_run_project_test(server_core: RefCounted) -> void:
 		{
 			"type": "object",
 			"properties": {
-				"status": {"type": "string"},
+				"status": {"type": "string", "description": "'pending' while running, then 'passed' or 'failed'."},
 				"framework": {"type": "string"},
 				"test_path": {"type": "string"},
 				"exit_code": {"type": "integer"},
+				"elapsed_ms": {"type": "integer", "description": "Time elapsed so far while status is 'pending'."},
 				"command": {"type": "array"},
 				"output": {"type": "array"}
 			}
@@ -685,15 +689,54 @@ func _tool_run_project_test(params: Dictionary) -> Dictionary:
 	test_path = String(validation["sanitized"])
 
 	var extension: String = test_path.get_extension().to_lower()
-	var absolute_test_path: String = ProjectSettings.globalize_path(test_path)
+	if extension != "py" and extension != "gd":
+		return {"error": "Unsupported project test type: " + extension}
 	if not FileAccess.file_exists(test_path):
 		return {"error": "Test file not found: " + test_path}
 
+	# A test run spawns a full subprocess (python, or a headless Godot for GUT)
+	# that can take seconds to minutes. Run it on a background thread so the
+	# editor stays responsive: the first call starts the run and returns
+	# "pending"; calling again with the same test_path polls for the result.
+	if _test_runner.has_job(test_path):
+		var polled: Dictionary = _test_runner.poll(test_path)
+		if not bool(polled["finished"]):
+			return {
+				"status": "pending",
+				"test_path": test_path,
+				"elapsed_ms": _test_runner.elapsed_ms(test_path),
+				"message": "Test is still running; call run_project_test again with the same test_path to poll for the result."
+			}
+		return polled["result"]
+
+	if _test_runner.active_count() >= MAX_CONCURRENT_TEST_JOBS:
+		return {"error": "Too many test runs in progress; poll the pending runs before starting another."}
+
+	_test_runner.start(test_path, Callable(self, "_execute_project_test_blocking").bind(test_path))
+	return {
+		"status": "pending",
+		"test_path": test_path,
+		"message": "Test started on a background thread; call run_project_test again with the same test_path to poll for the result."
+	}
+
+# Blocking execution of a single test. Used by the background worker thread for
+# run_project_test and directly (synchronously) by the batch runner.
+func _execute_project_test_blocking(test_path: String) -> Dictionary:
+	var validation: Dictionary = _validate_test_path(test_path, false)
+	if validation.has("error"):
+		return validation
+	var sanitized_path: String = String(validation["sanitized"])
+
+	var extension: String = sanitized_path.get_extension().to_lower()
+	var absolute_test_path: String = ProjectSettings.globalize_path(sanitized_path)
+	if not FileAccess.file_exists(sanitized_path):
+		return {"error": "Test file not found: " + sanitized_path}
+
 	match extension:
 		"py":
-			return _run_python_project_test(test_path, absolute_test_path)
+			return _run_python_project_test(sanitized_path, absolute_test_path)
 		"gd":
-			return _run_gut_project_test(test_path)
+			return _run_gut_project_test(sanitized_path)
 		_:
 			return {"error": "Unsupported project test type: " + extension}
 
@@ -755,7 +798,7 @@ func _tool_run_project_tests(params: Dictionary) -> Dictionary:
 				"reason": "No available runner"
 			})
 			continue
-		var test_result: Dictionary = _tool_run_project_test({"test_path": String(test_entry.get("test_path", ""))})
+		var test_result: Dictionary = _execute_project_test_blocking(String(test_entry.get("test_path", "")))
 		results.append(test_result)
 		if test_result.get("status", "") == "passed":
 			passed_count += 1
