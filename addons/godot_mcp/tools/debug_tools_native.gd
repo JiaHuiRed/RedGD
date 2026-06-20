@@ -480,11 +480,12 @@ func _register_get_debug_stack_frames(server_core: RefCounted) -> void:
 			"type": "object",
 			"properties": {
 				"refresh": {"type": "boolean", "default": true},
-				"session_id": {"type": "integer", "description": "Optional debugger session id. Omit or use -1 for all active sessions."}
+				"session_id": {"type": "integer", "description": "Optional debugger session id. Omit or use -1 for all active sessions."},
+				"limit": {"type": "integer", "description": "Maximum number of stack frames to return. Default is 1000.", "default": 1000}
 			}
 		},
 		Callable(self, "_tool_get_debug_stack_frames"),
-		{"type": "object", "properties": {"frames": {"type": "array"}, "count": {"type": "integer"}, "refresh_result": {"type": "object"}}},
+		{"type": "object", "properties": {"frames": {"type": "array"}, "count": {"type": "integer"}, "total_count": {"type": "integer"}, "truncated": {"type": "boolean"}, "refresh_result": {"type": "object"}}},
 		{"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
 		"supplementary", "Debug-Advanced"
 	)
@@ -497,7 +498,14 @@ func _tool_get_debug_stack_frames(params: Dictionary) -> Dictionary:
 	if params.get("refresh", true):
 		refresh_result = bridge.request_stack_dump(params.get("session_id", -1))
 	var frames: Array = bridge.get_latest_stack_dump()
-	return {"frames": frames, "count": frames.size(), "refresh_result": refresh_result}
+	var bounded: Dictionary = PayloadUtils.truncate_list(frames, int(params.get("limit", 0)))
+	return {
+		"frames": bounded["items"],
+		"count": bounded["items"].size(),
+		"total_count": bounded["total_count"],
+		"truncated": bounded["truncated"],
+		"refresh_result": refresh_result
+	}
 
 func _register_get_debug_stack_variables(server_core: RefCounted) -> void:
 	server_core.register_tool(
@@ -508,11 +516,12 @@ func _register_get_debug_stack_variables(server_core: RefCounted) -> void:
 			"properties": {
 				"frame": {"type": "integer", "default": 0},
 				"refresh": {"type": "boolean", "default": true},
-				"session_id": {"type": "integer", "description": "Optional debugger session id. Omit or use -1 for all active sessions."}
+				"session_id": {"type": "integer", "description": "Optional debugger session id. Omit or use -1 for all active sessions."},
+				"limit": {"type": "integer", "description": "Maximum number of variables to return. Default is 1000.", "default": 1000}
 			}
 		},
 		Callable(self, "_tool_get_debug_stack_variables"),
-		{"type": "object", "properties": {"frame": {"type": "integer"}, "variables": {"type": "array"}, "count": {"type": "integer"}, "refresh_result": {"type": "object"}}},
+		{"type": "object", "properties": {"frame": {"type": "integer"}, "variables": {"type": "array"}, "count": {"type": "integer"}, "total_count": {"type": "integer"}, "truncated": {"type": "boolean"}, "refresh_result": {"type": "object"}}},
 		{"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false},
 		"supplementary", "Debug-Advanced"
 	)
@@ -528,7 +537,15 @@ func _tool_get_debug_stack_variables(params: Dictionary) -> Dictionary:
 	if params.get("refresh", true):
 		refresh_result = bridge.request_stack_frame_vars(frame, params.get("session_id", -1))
 	var variables: Array = bridge.get_latest_stack_variables(frame)
-	return {"frame": frame, "variables": variables, "count": variables.size(), "refresh_result": refresh_result}
+	var bounded: Dictionary = PayloadUtils.truncate_list(variables, int(params.get("limit", 0)))
+	return {
+		"frame": frame,
+		"variables": bounded["items"],
+		"count": bounded["items"].size(),
+		"total_count": bounded["total_count"],
+		"truncated": bounded["truncated"],
+		"refresh_result": refresh_result
+	}
 
 func _register_get_debug_scopes(server_core: RefCounted) -> void:
 	server_core.register_tool(
