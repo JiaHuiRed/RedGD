@@ -163,3 +163,8 @@ validate_export_preset,,Validate an export preset against export_presets.cfg and
 run_export,,Run a Godot CLI export for a configured preset.,为配置的预设运行 Godot CLI 导出。
 find_deprecated_api_usage,,Scan scripts for removed or deprecated Godot 4.x APIs and report file:line with the modern replacement (class rules cross-checked against ClassDB).,扫描脚本中已移除或弃用的 Godot 4.x API 并按 file:line 报告现代替代写法（类规则用 ClassDB 交叉验证）。
 detect_gdextension_addons,,Detect native GDExtension addons by scanning .gdextension files and report entry symbol compatibility_minimum and per-platform library availability. Detection only.,扫描 .gdextension 文件检测原生 GDExtension 插件并报告入口符号与各平台库是否就绪（仅检测不编译）。
+get_unsaved_changes,,List scenes and scripts with unsaved edits in the editor buffers using Godot 4.7 APIs.,列出编辑器缓冲区中有未保存改动的场景与脚本（Godot 4.7）。
+save_all_scripts,,Save every script currently open in the script editor (Godot 4.7).,保存脚本编辑器中所有打开的脚本（Godot 4.7）。
+reload_open_scripts,,Reload the editor's open script buffers from disk so external rewrites are not overwritten (Godot 4.7).,从磁盘重新加载编辑器打开的脚本缓冲区避免覆盖外部改写（Godot 4.7）。
+close_script_tab,,Close a script tab in the script editor optionally targeting a specific script path (Godot 4.7).,关闭脚本编辑器中的标签页可指定脚本路径（Godot 4.7）。
+get_import_status,,Report whether the EditorFileSystem is currently scanning or importing assets (Godot 4.7).,报告 EditorFileSystem 是否正在扫描或导入资源（Godot 4.7）。

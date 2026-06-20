@@ -139,3 +139,49 @@ func test_stop_project_output_schema_includes_stopped_after_ms():
 	"""check _register_stop_project output_schema includes stopped_after_ms"""
 	var source_code: String = _editor_tools.get_script().source_code
 	assert_true(source_code.contains("stopped_after_ms"), "Source should reference stopped_after_ms")
+
+# --- Editor buffer sync tools (Godot 4.7 APIs, graceful 4.6 degradation) ---
+
+func test_first_supported_method_finds_existing():
+	var found: String = _editor_tools._first_supported_method(Engine, ["does_not_exist", "get_version_info"])
+	assert_eq(found, "get_version_info", "Should return the first method the object actually has")
+
+func test_first_supported_method_missing_returns_empty():
+	var found: String = _editor_tools._first_supported_method(Engine, ["nope_one", "nope_two"])
+	assert_eq(found, "", "Should return empty string when no candidate exists")
+
+func test_first_supported_method_null_object_returns_empty():
+	var found: String = _editor_tools._first_supported_method(null, ["get_version_info"])
+	assert_eq(found, "", "Should return empty string for a null object")
+
+func test_engine_version_string_non_empty():
+	var version: String = _editor_tools._engine_version_string()
+	assert_false(version.is_empty(), "Engine version string should not be empty")
+
+func test_get_unsaved_changes_requires_editor():
+	var result: Dictionary = _editor_tools._tool_get_unsaved_changes({})
+	assert_eq(result.get("error", ""), "Editor interface not available", "Should guard on missing editor interface")
+
+func test_save_all_scripts_requires_editor():
+	var result: Dictionary = _editor_tools._tool_save_all_scripts({})
+	assert_eq(result.get("error", ""), "Editor interface not available", "Should guard on missing editor interface")
+
+func test_reload_open_scripts_requires_editor():
+	var result: Dictionary = _editor_tools._tool_reload_open_scripts({})
+	assert_eq(result.get("error", ""), "Editor interface not available", "Should guard on missing editor interface")
+
+func test_close_script_tab_requires_editor():
+	var result: Dictionary = _editor_tools._tool_close_script_tab({})
+	assert_eq(result.get("error", ""), "Editor interface not available", "Should guard on missing editor interface")
+
+func test_get_import_status_requires_editor():
+	var result: Dictionary = _editor_tools._tool_get_import_status({})
+	assert_eq(result.get("error", ""), "Editor interface not available", "Should guard on missing editor interface")
+
+func test_editor_sync_tools_use_has_method_guards():
+	var source_code: String = _editor_tools.get_script().source_code
+	assert_true(source_code.contains("get_unsaved_scenes"), "get_unsaved_changes should probe EditorInterface.get_unsaved_scenes")
+	assert_true(source_code.contains("get_unsaved_files"), "get_unsaved_changes should probe ScriptEditor.get_unsaved_files")
+	assert_true(source_code.contains("save_all_scripts"), "save_all_scripts should call ScriptEditor.save_all_scripts")
+	assert_true(source_code.contains("is_importing"), "get_import_status should probe EditorFileSystem.is_importing")
+	assert_true(source_code.contains("\"unsupported\""), "Editor sync tools should degrade with an 'unsupported' status")
