@@ -118,6 +118,16 @@ def main() -> int:
             {"test_path": TEMP_TEST_PATH, "timeout_ms": 30000},
             request_id=3,
         )
+        poll_deadline = time.time() + 60
+        while run_result.get("status") == "pending":
+            if time.time() > poll_deadline:
+                raise AssertionError(f"Timed out waiting for async test run to finish: {run_result}")
+            time.sleep(0.5)
+            run_result = tool_call(
+                "run_project_test",
+                {"test_path": TEMP_TEST_PATH, "timeout_ms": 30000},
+                request_id=3,
+            )
         if run_result.get("status") != "passed":
             raise AssertionError(f"Expected temporary project test to pass: {run_result}")
         if run_result.get("framework") != "python":

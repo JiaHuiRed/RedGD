@@ -3468,23 +3468,26 @@ Continue：恢复执行。
 
 ### 136. run_project_test
 
-运行单个项目测试脚本。Python 集成测试使用 python 执行，GUT 单元测试通过 Godot headless 执行。
+运行单个项目测试脚本，**不阻塞编辑器**。Python 集成测试使用 python 执行，GUT 单元测试通过 Godot headless 执行。
+
+测试在后台线程中运行：**首次调用**启动测试并返回 `status="pending"`；用**相同的 `test_path` 再次调用**即可轮询，直到返回最终结果（`passed` / `failed`）。这与运行时探针的"先 pending、后轮询"模式一致，避免长时间运行的子进程冻结编辑器。
 
 **参数**：
 | 参数 | 类型 | 必需 | 描述 |
 |------|------|------|------|
 | `test_path` | string | 是 | `res://` 下的测试文件路径 |
-| `timeout_ms` | int | 否 | 超时时间（毫秒） |
+| `timeout_ms` | int | 否 | 调用方的超时提示（保留字段） |
 
 **返回值**：
 | 字段 | 类型 | 描述 |
 |------|------|------|
-| `status` | string | `"success"`、`"skipped"` 或 `"error"` |
+| `status` | string | 运行中为 `"pending"`，完成后为 `"passed"` 或 `"failed"` |
 | `framework` | string | 测试框架：`python` 或 `gut` |
 | `test_path` | string | 测试文件路径 |
-| `exit_code` | int | 退出码 |
-| `command` | array | 执行的命令 |
-| `output` | array | 输出内容 |
+| `exit_code` | int | 退出码（完成后） |
+| `elapsed_ms` | int | `pending` 时已运行的时间（毫秒） |
+| `command` | array | 执行的命令（完成后） |
+| `output` | array | 输出内容（完成后） |
 
 **注解**：`readOnlyHint=false`, `destructiveHint=false`, `idempotentHint=false`, `openWorldHint=false`
 
@@ -3492,7 +3495,9 @@ Continue：恢复执行。
 
 ### 137. run_project_tests
 
-从目录中发现并运行多个项目测试，聚合通过/失败计数。
+从目录中发现并运行多个项目测试，聚合通过/失败计数，**不阻塞编辑器**。
+
+整批测试在后台线程中运行：**首次调用**启动批量运行并返回 `status="pending"`；用**相同的参数再次调用**即可轮询，直到返回聚合结果（`passed` / `failed` / `skipped`）。这与 `run_project_test` 的"先 pending、后轮询"模式一致，避免批量运行多个测试子进程时冻结编辑器。
 
 **参数**：
 | 参数 | 类型 | 必需 | 描述 |
@@ -3504,9 +3509,10 @@ Continue：恢复执行。
 **返回值**：
 | 字段 | 类型 | 描述 |
 |------|------|------|
-| `status` | string | `"success"` 或 `"partial"` |
+| `status` | string | 运行中为 `"pending"`，完成后为 `"passed"` / `"failed"` / `"skipped"` |
 | `search_path` | string | 搜索路径 |
 | `framework` | string | 框架 |
+| `elapsed_ms` | int | `pending` 时已运行的时间（毫秒） |
 | `total_count` | int | 总测试数 |
 | `passed_count` | int | 通过数 |
 | `failed_count` | int | 失败数 |
