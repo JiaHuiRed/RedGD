@@ -23,8 +23,12 @@ const METHOD_TOOLS_CALL: String = "tools/call"
 const METHOD_RESOURCES_LIST: String = "resources/list"
 const METHOD_RESOURCES_READ: String = "resources/read"
 const METHOD_RESOURCES_SUBSCRIBE: String = "resources/subscribe"
+const METHOD_RESOURCES_UNSUBSCRIBE: String = "resources/unsubscribe"
 const METHOD_PROMPTS_LIST: String = "prompts/list"
 const METHOD_PROMPTS_GET: String = "prompts/get"
+
+# Server-initiated notifications
+const NOTIFICATION_RESOURCES_UPDATED: String = "notifications/resources/updated"
 
 # JSON-RPC错误码
 const ERROR_PARSE_ERROR: int = -32700
@@ -150,6 +154,9 @@ class MCPPrompt:
 	var name: String = ""
 	var description: String = ""
 	var arguments: Array[Dictionary] = []  # [{name, description, required}]
+	# Callable(args: Dictionary) -> Dictionary, returning {description?, messages}.
+	# Invoked by prompts/get to produce the prompt content.
+	var get_callable: Callable = Callable()
 	
 	func to_dict() -> Dictionary:
 		return {
