@@ -41,6 +41,8 @@ get_scene_structure,,Get the complete structure of the current scene as a tree. 
 list_project_scenes,,List all scene files (.tscn) in the project. Returns paths relative to res://.,列出项目中所有场景文件（.tscn）。返回相对于 res:// 的路径。
 list_open_scenes,,List scene tabs currently open in the Godot editor.,列出 Godot 编辑器中当前打开的场景标签页。
 close_scene_tab,,Close the active scene tab, or activate a specified scene tab and close it.,关闭当前活动的场景标签页，或激活指定的场景标签页然后关闭它。
+instantiate_scene,,"Instance an existing scene file (.tscn) as a child of a node in the currently edited scene. Useful for placing prefabs such as card UIs or enemy instances into the scene tree.","将已有场景文件（.tscn）实例化为当前编辑场景中某个节点的子节点。适合把卡牌 UI、敌人等预制体放入场景树。"
+save_branch_as_scene,,"Save a node and all of its descendants from the currently edited scene as a reusable scene file (.tscn). Useful for extracting a designed UI branch into a prefab. Does not modify the source scene tree.","将当前编辑场景中的某个节点及其全部子节点保存为可复用的场景文件（.tscn）。适合把设计好的 UI 分支提取为预制体。不会修改源场景树。"
 create_node,,Create a new node in the Godot scene tree. Returns the node path and type.,在 Godot 场景树中创建新节点。返回节点路径和类型。
 delete_node,,Delete a node from the Godot scene tree. This operation is destructive and cannot be undone.,从 Godot 场景树中删除节点。此操作是破坏性的，无法撤销。
 update_node_property,,Update a property of a specific node. Supports common property types with automatic type conversion.,更新特定节点的属性。支持常见属性类型并自动进行类型转换。
