@@ -41,10 +41,17 @@ var _tab_container: TabContainer = null
 var _debounce_timer: Timer = null
 var _group_widgets: Dictionary = {}
 var _tools_search_edit: LineEdit = null
-var _core_section_label: Label = null
-var _supp_section_label: Label = null
 var _core_group_names: Array = []
 var _supp_group_names: Array = []
+var _category_nav_container: VBoxContainer = null
+var _nav_group: ButtonGroup = null
+var _nav_items: Dictionary = {}
+var _selected_category: String = "__recommended__"
+var _detail_title: Label = null
+var _detail_desc: Label = null
+var _detail_count: Label = null
+var _enable_all_button: Button = null
+var _disable_all_button: Button = null
 var _language_option: OptionButton = null
 
 var _log_file_path: String = "user://mcp_server.log"
@@ -368,21 +375,90 @@ func _create_tools_tab() -> VBoxContainer:
 	_tools_count_label = Label.new()
 	_tools_count_label.text = _tr("ui.tools_init")
 	_tools_count_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_tools_count_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.62))
 	toolbar.add_child(_tools_count_label)
 
 	_tools_search_edit = LineEdit.new()
 	_tools_search_edit.placeholder_text = _tr("ui.search_placeholder")
 	_tools_search_edit.clear_button_enabled = true
-	_tools_search_edit.custom_minimum_size = Vector2(180, 0)
+	_tools_search_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_tools_search_edit.text_changed.connect(_on_tools_search_changed)
-	toolbar.add_child(_tools_search_edit)
+	content.add_child(_tools_search_edit)
+
+	var split: HSplitContainer = HSplitContainer.new()
+	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	split.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	split.split_offset = 210
+	content.add_child(split)
+
+	var nav_scroll: ScrollContainer = ScrollContainer.new()
+	nav_scroll.custom_minimum_size = Vector2(190, 0)
+	nav_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	nav_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	split.add_child(nav_scroll)
+
+	_category_nav_container = VBoxContainer.new()
+	_category_nav_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_category_nav_container.add_theme_constant_override("separation", 2)
+	nav_scroll.add_child(_category_nav_container)
+
+	var detail: VBoxContainer = VBoxContainer.new()
+	detail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	detail.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	detail.add_theme_constant_override("separation", 4)
+	split.add_child(detail)
+
+	var header_margin: MarginContainer = MarginContainer.new()
+	header_margin.add_theme_constant_override("margin_left", 10)
+	detail.add_child(header_margin)
+
+	var header_box: VBoxContainer = VBoxContainer.new()
+	header_box.add_theme_constant_override("separation", 2)
+	header_margin.add_child(header_box)
+
+	_detail_title = Label.new()
+	_detail_title.add_theme_font_size_override("font_size", 18)
+	_detail_title.add_theme_color_override("font_color", Color(0.95, 0.95, 0.98))
+	header_box.add_child(_detail_title)
+
+	_detail_desc = Label.new()
+	_detail_desc.autowrap_mode = TextServer.AUTOWRAP_WORD
+	_detail_desc.add_theme_font_size_override("font_size", 12)
+	_detail_desc.add_theme_color_override("font_color", Color(0.6, 0.6, 0.64))
+	header_box.add_child(_detail_desc)
+
+	var action_row: HBoxContainer = HBoxContainer.new()
+	action_row.add_theme_constant_override("separation", 6)
+	header_box.add_child(action_row)
+
+	_enable_all_button = Button.new()
+	_enable_all_button.text = _tr("ui.enable_all")
+	_enable_all_button.pressed.connect(_on_enable_all_pressed)
+	action_row.add_child(_enable_all_button)
+
+	_disable_all_button = Button.new()
+	_disable_all_button.text = _tr("ui.disable_all")
+	_disable_all_button.pressed.connect(_on_disable_all_pressed)
+	action_row.add_child(_disable_all_button)
+
+	var action_spacer: Control = Control.new()
+	action_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	action_row.add_child(action_spacer)
+
+	_detail_count = Label.new()
+	_detail_count.add_theme_font_size_override("font_size", 11)
+	_detail_count.add_theme_color_override("font_color", Color(0.6, 0.6, 0.62))
+	action_row.add_child(_detail_count)
+
+	var header_sep: HSeparator = HSeparator.new()
+	detail.add_child(header_sep)
 
 	var scroll: ScrollContainer = ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-	content.add_child(scroll)
+	detail.add_child(scroll)
 
 	_tools_list_container = VBoxContainer.new()
 	_tools_list_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -587,8 +663,6 @@ func _refresh_tools_list() -> void:
 	for child in _tools_list_container.get_children():
 		child.queue_free()
 	_group_widgets.clear()
-	_core_section_label = null
-	_supp_section_label = null
 	_core_group_names = []
 	_supp_group_names = []
 
@@ -611,45 +685,26 @@ func _refresh_tools_list() -> void:
 	if classifier and classifier.has_method("get_all_groups"):
 		all_groups = classifier.get_all_groups()
 
-	var core_group_names: Array = []
-	var supp_group_names: Array = []
 	for group_name in all_groups:
 		if tools_by_group.has(group_name):
 			var sample: Dictionary = tools_by_group[group_name][0]
 			var cat: String = sample.get("category", "core")
 			if cat == "supplementary":
-				supp_group_names.append(group_name)
+				_supp_group_names.append(group_name)
 			else:
-				core_group_names.append(group_name)
+				_core_group_names.append(group_name)
 
-	_core_group_names = core_group_names
-	_supp_group_names = supp_group_names
+	for group_name in _core_group_names:
+		_create_group_widget(group_name, tools_by_group[group_name])
+	for group_name in _supp_group_names:
+		_create_group_widget(group_name, tools_by_group[group_name])
 
-	if core_group_names.size() > 0:
-		_core_section_label = Label.new()
-		_core_section_label.text = _tr("ui.core_tools")
-		_core_section_label.add_theme_font_size_override("font_size", 14)
-		_core_section_label.add_theme_color_override("font_color", Color(0.3, 0.7, 0.7))
-		_core_section_label.add_theme_constant_override("margin_top", 4)
-		_tools_list_container.add_child(_core_section_label)
-
-		for group_name in core_group_names:
-			_create_group_widget(group_name, tools_by_group[group_name])
-
-	if supp_group_names.size() > 0:
-		_supp_section_label = Label.new()
-		_supp_section_label.text = _tr("ui.supplementary_tools")
-		_supp_section_label.add_theme_font_size_override("font_size", 14)
-		_supp_section_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.3))
-		_supp_section_label.add_theme_constant_override("margin_top", 8)
-		_tools_list_container.add_child(_supp_section_label)
-
-		for group_name in supp_group_names:
-			_create_group_widget(group_name, tools_by_group[group_name])
-
+	_build_category_nav()
 	_update_tools_count()
-	if _tools_search_edit and not _tools_search_edit.text.strip_edges().is_empty():
-		_apply_tools_filter(_tools_search_edit.text)
+
+	if not _nav_items.has(_selected_category):
+		_selected_category = "__recommended__"
+	_select_category(_selected_category)
 
 func _create_group_widget(group_name: String, group_tools: Array) -> void:
 	var widget: MCPToolGroupItem = MCPToolGroupItem.new()
@@ -659,40 +714,225 @@ func _create_group_widget(group_name: String, group_tools: Array) -> void:
 	_tools_list_container.add_child(widget)
 	_group_widgets[group_name] = widget
 
-func _on_tools_search_changed(new_text: String) -> void:
-	_apply_tools_filter(new_text)
+# --- Category navigator (master-detail) ---
 
-func _apply_tools_filter(query: String) -> void:
-	var q: String = query.strip_edges().to_lower()
-	var core_visible: int = 0
-	var supp_visible: int = 0
+func _build_category_nav() -> void:
+	if not _category_nav_container:
+		return
+	for child in _category_nav_container.get_children():
+		child.queue_free()
+	_nav_items.clear()
+	_nav_group = ButtonGroup.new()
+
+	_add_nav_item("__recommended__", _tr("ui.recommended"), "Favorites")
+	_add_nav_item("__all__", _tr("ui.all_tools"), "GuiTreeArrowDown")
+
+	if _core_group_names.size() > 0:
+		_add_nav_section(_tr("ui.core_tools"))
+		for group_name in _core_group_names:
+			_add_nav_item(group_name, _group_display_name(group_name), _group_icon_name(group_name))
+	if _supp_group_names.size() > 0:
+		_add_nav_section(_tr("ui.supplementary_tools"))
+		for group_name in _supp_group_names:
+			_add_nav_item(group_name, _group_display_name(group_name), _group_icon_name(group_name))
+
+	_update_nav_counts()
+
+func _add_nav_section(title: String) -> void:
+	var label: Label = Label.new()
+	label.text = title
+	label.add_theme_font_size_override("font_size", 10)
+	label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.54))
+	label.add_theme_constant_override("margin_top", 8)
+	_category_nav_container.add_child(label)
+
+func _add_nav_item(key: String, label: String, icon_name: String) -> void:
+	var icon_tex: Texture2D = null
+	if icon_name != "" and has_theme_icon(icon_name, "EditorIcons"):
+		icon_tex = get_theme_icon(icon_name, "EditorIcons")
+	var item: MCPCategoryNavItem = MCPCategoryNavItem.new()
+	item.setup(key, label, icon_tex, _nav_group)
+	item.category_selected.connect(_select_category)
+	_category_nav_container.add_child(item)
+	_nav_items[key] = item
+
+func _group_icon_name(group_name: String) -> String:
+	var by_prefix: Dictionary = {
+		"Node": "Node",
+		"Script": "Script",
+		"Scene": "PackedScene",
+		"Editor": "Tools",
+		"Debug": "Debug",
+		"Project": "ProjectSettings",
+	}
+	for prefix in by_prefix:
+		if group_name.begins_with(prefix):
+			return by_prefix[prefix]
+	return ""
+
+func _group_display_name(group_name: String) -> String:
+	var key: String = "group." + group_name
+	var translated: String = _tr(key)
+	return group_name if translated == key else translated
+
+func _group_description(group_name: String) -> String:
+	var key: String = "groupdesc." + group_name
+	var translated: String = _tr(key)
+	return "" if translated == key else translated
+
+func _groups_for_selection() -> Array:
+	match _selected_category:
+		"__recommended__":
+			return _core_group_names.duplicate()
+		"__all__":
+			return _core_group_names + _supp_group_names
+		_:
+			return [_selected_category]
+
+func _select_category(key: String) -> void:
+	_selected_category = key
+	if _tools_search_edit and not _tools_search_edit.text.is_empty():
+		_tools_search_edit.set_block_signals(true)
+		_tools_search_edit.text = ""
+		_tools_search_edit.set_block_signals(false)
+	if _nav_items.has(key):
+		_nav_items[key].set_selected(true)
+	_apply_view()
+
+func _on_tools_search_changed(_new_text: String) -> void:
+	_apply_view()
+
+func _apply_view() -> void:
+	var query: String = ""
+	if _tools_search_edit:
+		query = _tools_search_edit.text.strip_edges().to_lower()
+	if query.is_empty():
+		_apply_category_view()
+	else:
+		_apply_search_view(query)
+	_update_detail_count()
+
+func _apply_category_view() -> void:
+	var scope: Array = _groups_for_selection()
 	for group_name in _group_widgets:
 		var widget: MCPToolGroupItem = _group_widgets[group_name]
 		if widget == null:
 			continue
-		var visible_count: int = widget.apply_filter(q)
-		var group_shown: bool = q.is_empty() or visible_count > 0
-		widget.visible = group_shown
-		if group_shown:
-			if _supp_group_names.has(group_name):
-				supp_visible += 1
-			else:
-				core_visible += 1
-	if _core_section_label:
-		_core_section_label.visible = q.is_empty() or core_visible > 0
-	if _supp_section_label:
-		_supp_section_label.visible = q.is_empty() or supp_visible > 0
+		widget.apply_filter("")
+		widget.visible = scope.has(group_name)
+	_set_bulk_buttons_enabled(true)
+	match _selected_category:
+		"__recommended__":
+			_detail_title.text = _tr("ui.recommended")
+			_detail_desc.text = _tr("ui.recommended_desc")
+		"__all__":
+			_detail_title.text = _tr("ui.all_tools")
+			_detail_desc.text = _tr("ui.all_tools_desc")
+		_:
+			_detail_title.text = _group_display_name(_selected_category)
+			_detail_desc.text = _group_description(_selected_category)
+
+func _apply_search_view(query: String) -> void:
+	var total_matches: int = 0
+	for group_name in _group_widgets:
+		var widget: MCPToolGroupItem = _group_widgets[group_name]
+		if widget == null:
+			continue
+		var count: int = widget.apply_filter(query)
+		widget.visible = count > 0
+		total_matches += count
+	_set_bulk_buttons_enabled(false)
+	_detail_title.text = _tr("ui.search_results")
+	_detail_desc.text = _tr("ui.no_results") if total_matches == 0 else ""
+
+func _set_bulk_buttons_enabled(value: bool) -> void:
+	if _enable_all_button:
+		_enable_all_button.disabled = not value
+	if _disable_all_button:
+		_disable_all_button.disabled = not value
+
+func _on_enable_all_pressed() -> void:
+	_set_scope_enabled(true)
+
+func _on_disable_all_pressed() -> void:
+	_set_scope_enabled(false)
+
+func _set_scope_enabled(value: bool) -> void:
+	for group_name in _groups_for_selection():
+		var widget: MCPToolGroupItem = _group_widgets.get(group_name)
+		if widget:
+			widget.set_group_enabled(value)
+	_update_nav_counts()
+	_update_tools_count()
+	_update_detail_count()
+	_debounce_save()
+
+func _compute_group_counts() -> Dictionary:
+	var out: Dictionary = {}
+	var tools: Array = []
+	if _server_core and _server_core.has_method("get_registered_tools"):
+		tools = _server_core.get_registered_tools()
+	for tool_info in tools:
+		var group: String = tool_info.get("group", "")
+		if not out.has(group):
+			out[group] = {"enabled": 0, "total": 0}
+		out[group]["total"] += 1
+		if tool_info.get("enabled", true):
+			out[group]["enabled"] += 1
+	return out
+
+func _update_nav_counts() -> void:
+	var counts: Dictionary = _compute_group_counts()
+	var core_enabled: int = 0
+	var core_total: int = 0
+	var supp_enabled: int = 0
+	var supp_total: int = 0
+	for group_name in _core_group_names:
+		var c: Dictionary = counts.get(group_name, {"enabled": 0, "total": 0})
+		core_enabled += c["enabled"]
+		core_total += c["total"]
+		if _nav_items.has(group_name):
+			_nav_items[group_name].set_count(c["enabled"], c["total"])
+	for group_name in _supp_group_names:
+		var c2: Dictionary = counts.get(group_name, {"enabled": 0, "total": 0})
+		supp_enabled += c2["enabled"]
+		supp_total += c2["total"]
+		if _nav_items.has(group_name):
+			_nav_items[group_name].set_count(c2["enabled"], c2["total"])
+	if _nav_items.has("__recommended__"):
+		_nav_items["__recommended__"].set_count(core_enabled, core_total)
+	if _nav_items.has("__all__"):
+		_nav_items["__all__"].set_count(core_enabled + supp_enabled, core_total + supp_total)
+
+func _update_detail_count() -> void:
+	if not _detail_count:
+		return
+	if _tools_search_edit and not _tools_search_edit.text.strip_edges().is_empty():
+		_detail_count.text = ""
+		return
+	var counts: Dictionary = _compute_group_counts()
+	var enabled: int = 0
+	var total: int = 0
+	for group_name in _groups_for_selection():
+		var c: Dictionary = counts.get(group_name, {"enabled": 0, "total": 0})
+		enabled += c["enabled"]
+		total += c["total"]
+	_detail_count.text = _trf("ui.enabled_format", [enabled, total])
 
 func _on_tool_toggled(tool_name: String, enabled: bool) -> void:
 	if _server_core and _server_core.has_method("set_tool_enabled"):
 		_server_core.set_tool_enabled(tool_name, enabled)
 	_update_tools_count()
+	_update_nav_counts()
+	_update_detail_count()
 	_debounce_save()
 
 func _on_group_toggled(group_name: String, enabled: bool) -> void:
 	if _server_core and _server_core.has_method("set_group_enabled"):
 		_server_core.set_group_enabled(group_name, enabled)
 	_update_tools_count()
+	_update_nav_counts()
+	_update_detail_count()
 	_debounce_save()
 
 func _update_tools_count() -> void:
@@ -763,6 +1003,10 @@ func _refresh_translations() -> void:
 		_refresh_tools_button.text = _tr("ui.refresh_tools")
 	if _tools_search_edit:
 		_tools_search_edit.placeholder_text = _tr("ui.search_placeholder")
+	if _enable_all_button:
+		_enable_all_button.text = _tr("ui.enable_all")
+	if _disable_all_button:
+		_disable_all_button.text = _tr("ui.disable_all")
 	if _open_log_button:
 		_open_log_button.text = _tr("ui.open_log")
 	if _language_option:
