@@ -7,10 +7,11 @@ and what to update so the docs stay in sync with the code.
 
 ### Language policy
 
-- **No non-ASCII characters in code files.** Comments, strings and identifiers in `.gd`,
-  `.cs` and `.py` files must be English.
-- Translated/long-form prose is allowed only in `AGENTS.md`, `README.zh.md`, and under
-  `docs/`.
+- Comments and user-facing strings **may be written in Chinese or English** — choose
+  whatever is clearest for the teams and customers using the plugin. Localized text is
+  encouraged.
+- Keep identifiers (variables, functions, class names) ASCII/English for GDScript tooling
+  and cross-platform compatibility.
 
 ### GDScript style
 
