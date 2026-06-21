@@ -13,10 +13,10 @@ A powerful Godot Engine plugin that integrates AI assistants (Claude, etc.) via 
 - **Full Project Access**: AI assistants can read and modify scripts, scenes, nodes, and resources
 - **Native Implementation**: No Node.js dependency required - runs entirely within Godot
 - **Real-time Editing**: Apply AI suggestions directly in the editor
-- **Comprehensive Tool Set** (183 tools — 30 core + 153 supplementary):
+- **Comprehensive Tool Set** (185 tools — 30 core + 155 supplementary):
   - **Node Tools** (9 core + 15 advanced): Create, modify, manage scene nodes, duplicate, move, rename, signal connections, anchor presets, group management, batch operations (update/read properties, connect signals), scene auditing, Control offset transform (Godot 4.7), 2D one-way collision
   - **Script Tools** (7 core + 10 advanced): Edit, analyze, create, attach, validate GDScript and C# files, validate shaders, batch read scripts, execute scripts, search in files, symbol indexing, definition & reference lookup
-  - **Scene Tools** (4 core + 4 advanced): Manipulate scene structure, save scenes, list/open/close scene tabs, project scene listing
+  - **Scene Tools** (4 core + 6 advanced): Manipulate scene structure, save scenes, list/open/close scene tabs, project scene listing, instance prefab scenes, save node branches as scenes
   - **Editor Tools** (4 core + 19 advanced): Control editor functionality, screenshot, signal inspection, filesystem reload, node/file selection, export management (templates + Android config), property inspector, editor buffer sync (unsaved changes, save/reload/close scripts), import status
   - **Debug Tools** (3 core + 67 advanced): Logging, debugger sessions, breakpoints, stack/variable inspection, profilers, runtime probe, animation/audio/shader/tilemap runtime control, debug execution control, await_scene_ready
   - **Project Tools** (3 core + 38 advanced): Access project settings, list resources, create resources, custom/script-backed & batch resource creation, resource property read/update, run tests, manage input mappings, inspect autoloads/global classes, resource diagnostics & health audit, reverse resource usage & unused-resource detection, migration compatibility scan & fixes, deprecated 4.x API scanning, GDExtension addon detection, gradient texture creation (incl. Godot 4.7 conic), PCK packing, render output (HDR 2D) configuration, drawable texture creation & drawing (Godot 4.7)
@@ -248,11 +248,13 @@ Implement a day/night cycle system with dynamic lighting
 - `open-scene` - Open a scene
 - `get-current-scene` - Get current scene info
 
-### Scene-Advanced (4)
+### Scene-Advanced (6)
 - `list-project-scenes` - List all scenes
 - `get-scene-structure` - Get scene structure details
 - `list-open-scenes` - List currently open scene tabs
 - `close-scene-tab` - Close a scene tab
+- `instantiate-scene` - Instance an existing .tscn as a child node
+- `save-branch-as-scene` - Save a node branch as a reusable .tscn
 
 ### Editor (4)
 - `get-editor-state` - Get current editor state

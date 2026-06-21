@@ -111,6 +111,8 @@ func _build_classifications() -> void:
 		{"name": "audit_scene_inheritance", "category": "supplementary", "group": "Node-Advanced"},
 		{"name": "list_open_scenes", "category": "supplementary", "group": "Scene-Advanced"},
 		{"name": "close_scene_tab", "category": "supplementary", "group": "Scene-Advanced"},
+		{"name": "instantiate_scene", "category": "supplementary", "group": "Scene-Advanced"},
+		{"name": "save_branch_as_scene", "category": "supplementary", "group": "Scene-Advanced"},
 		{"name": "list_project_script_symbols", "category": "supplementary", "group": "Script-Advanced"},
 		{"name": "find_script_symbol_definition", "category": "supplementary", "group": "Script-Advanced"},
 		{"name": "find_script_symbol_references", "category": "supplementary", "group": "Script-Advanced"},

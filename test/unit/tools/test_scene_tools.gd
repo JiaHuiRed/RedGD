@@ -75,3 +75,56 @@ func test_open_scene_returns_verification_tip_on_success():
 	if result.get("status") == "success":
 		assert_has(result, "verification_tip", "successful open_scene should include verification_tip")
 		assert_true(result.get("verification_tip", "").length() > 0, "verification_tip should not be empty")
+
+# --- instantiate_scene (Batch 2 prefab tool) ---
+
+func test_instantiate_scene_missing_path():
+	var result: Dictionary = _scene_tools._tool_instantiate_scene({})
+	assert_has(result, "error", "Missing scene_path should return an error")
+
+func test_instantiate_scene_rejects_non_tscn():
+	var result: Dictionary = _scene_tools._tool_instantiate_scene({"scene_path": "res://card.txt"})
+	assert_has(result, "error", "Non-.tscn path should return an error")
+
+func test_instantiate_scene_missing_file():
+	var result: Dictionary = _scene_tools._tool_instantiate_scene({"scene_path": "res://does_not_exist_prefab.tscn"})
+	assert_has(result, "error", "Nonexistent scene file should return an error")
+	assert_true(result.get("error", "").contains("not found"), "Error should mention the missing file")
+
+# --- save_branch_as_scene (Batch 2 prefab tool) ---
+
+func test_save_branch_as_scene_missing_node_path():
+	var result: Dictionary = _scene_tools._tool_save_branch_as_scene({"scene_path": "res://branch.tscn"})
+	assert_has(result, "error", "Missing node_path should return an error")
+
+func test_save_branch_as_scene_missing_scene_path():
+	var result: Dictionary = _scene_tools._tool_save_branch_as_scene({"node_path": "/root/Main/Branch"})
+	assert_has(result, "error", "Missing scene_path should return an error")
+
+func test_save_branch_as_scene_rejects_non_tscn():
+	var result: Dictionary = _scene_tools._tool_save_branch_as_scene({"node_path": "/root/Main/Branch", "scene_path": "res://branch.txt"})
+	assert_has(result, "error", "Non-.tscn save path should return an error")
+
+# --- subtree helpers (run without an editor) ---
+
+func test_count_nodes_counts_subtree():
+	var root: Node = Node.new()
+	var a: Node = Node.new()
+	var b: Node = Node.new()
+	var c: Node = Node.new()
+	root.add_child(a)
+	root.add_child(b)
+	a.add_child(c)
+	assert_eq(_scene_tools._count_nodes(root), 4, "Should count root plus 3 descendants")
+	root.free()
+
+func test_assign_owner_recursive_sets_owner():
+	var root: Node = Node.new()
+	var child: Node = Node.new()
+	var grandchild: Node = Node.new()
+	root.add_child(child)
+	child.add_child(grandchild)
+	_scene_tools._assign_owner_recursive(root, root)
+	assert_eq(child.owner, root, "child owner should be the branch root")
+	assert_eq(grandchild.owner, root, "grandchild owner should be the branch root")
+	root.free()

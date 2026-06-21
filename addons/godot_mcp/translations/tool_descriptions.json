@@ -43,6 +43,8 @@
   "list_project_scenes": "List all scene files (.tscn) in the project. Returns paths relative to res://.",
   "list_open_scenes": "List scene tabs currently open in the Godot editor.",
   "close_scene_tab": "Close the active scene tab, or activate a specified scene tab and close it.",
+  "instantiate_scene": "Instance an existing scene file (.tscn) as a child of a node in the currently edited scene. Useful for placing prefabs such as card UIs or enemy instances into the scene tree.",
+  "save_branch_as_scene": "Save a node and all of its descendants from the currently edited scene as a reusable scene file (.tscn). Useful for extracting a designed UI branch into a prefab. Does not modify the source scene tree.",
   "create_node": "Create a new node in the Godot scene tree. Returns the node path and type.",
   "delete_node": "Delete a node from the Godot scene tree. This operation is destructive and cannot be undone.",
   "update_node_property": "Update a property of a specific node. Supports common property types with automatic type conversion.",

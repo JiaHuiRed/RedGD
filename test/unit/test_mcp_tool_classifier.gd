@@ -11,9 +11,9 @@ func after_each():
 func test_classifier_initializes():
 	assert_ne(_classifier, null, "Classifier should initialize")
 
-func test_all_183_tools_registered():
+func test_all_185_tools_registered():
 	var all_tools: Array = _classifier.get_all_tools()
-	assert_eq(all_tools.size(), 183, "Should have exactly 183 tools registered")
+	assert_eq(all_tools.size(), 185, "Should have exactly 185 tools registered")
 
 func test_core_tools_count_within_limit():
 	var core_tools: Array = _classifier.get_core_tools()
@@ -21,7 +21,7 @@ func test_core_tools_count_within_limit():
 
 func test_supplementary_tools_count():
 	var supp_tools: Array = _classifier.get_supplementary_tools()
-	assert_eq(supp_tools.size(), 153, "Should have 153 supplementary tools")
+	assert_eq(supp_tools.size(), 155, "Should have 155 supplementary tools")
 
 func test_get_tool_category_create_node():
 	var cat: String = _classifier.get_tool_category("create_node")
@@ -112,6 +112,8 @@ func test_is_supplementary_tool():
 	assert_true(_classifier.is_supplementary_tool("batch_create_resources"), "batch_create_resources should be supplementary")
 	assert_true(_classifier.is_supplementary_tool("update_resource_properties"), "update_resource_properties should be supplementary")
 	assert_true(_classifier.is_supplementary_tool("read_resource_properties"), "read_resource_properties should be supplementary")
+	assert_true(_classifier.is_supplementary_tool("instantiate_scene"), "instantiate_scene should be supplementary")
+	assert_true(_classifier.is_supplementary_tool("save_branch_as_scene"), "save_branch_as_scene should be supplementary")
 	assert_true(_classifier.is_supplementary_tool("get_project_structure"), "get_project_structure should be supplementary")
 	assert_true(_classifier.is_supplementary_tool("get_debugger_sessions"), "get_debugger_sessions should be supplementary")
 	assert_true(_classifier.is_supplementary_tool("set_debugger_breakpoint"), "set_debugger_breakpoint should be supplementary")

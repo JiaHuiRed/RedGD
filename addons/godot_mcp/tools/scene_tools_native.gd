@@ -71,6 +71,8 @@ func register_tools(server_core: RefCounted) -> void:
 	_register_list_project_scenes(server_core)
 	_register_list_open_scenes(server_core)
 	_register_close_scene_tab(server_core)
+	_register_instantiate_scene(server_core)
+	_register_save_branch_as_scene(server_core)
 
 # ============================================================================
 # create_scene - 创建新场�?
@@ -773,6 +775,269 @@ func _tool_close_scene_tab(params: Dictionary) -> Dictionary:
 		"closed_scene": closed_scene,
 		"remaining_count": editor_interface.get_open_scenes().size()
 	}
+
+# ============================================================================
+# instantiate_scene - Instance an existing .tscn as a child of a scene node
+# ============================================================================
+
+func _register_instantiate_scene(server_core: RefCounted) -> void:
+	var tool_name: String = "instantiate_scene"
+	var description: String = "Instance an existing scene file (.tscn) as a child of a node in the currently edited scene. Useful for placing prefabs such as card UIs or enemy instances into the scene tree."
+
+	# inputSchema
+	var input_schema: Dictionary = {
+		"type": "object",
+		"properties": {
+			"scene_path": {
+				"type": "string",
+				"description": "Path to the scene file to instance (e.g. 'res://scenes/Card.tscn')."
+			},
+			"parent_path": {
+				"type": "string",
+				"description": "Path to the parent node in the edited scene (e.g. '/root/Main/HandContainer'). Defaults to the scene root."
+			},
+			"instance_name": {
+				"type": "string",
+				"description": "Optional name for the instanced node. Defaults to the scene file's base name."
+			}
+		},
+		"required": ["scene_path"]
+	}
+
+	# outputSchema
+	var output_schema: Dictionary = {
+		"type": "object",
+		"properties": {
+			"status": {"type": "string"},
+			"scene_path": {"type": "string"},
+			"instance_path": {"type": "string"},
+			"node_type": {"type": "string"}
+		}
+	}
+
+	# annotations
+	var annotations: Dictionary = {
+		"readOnlyHint": false,
+		"destructiveHint": false,
+		"idempotentHint": false,
+		"openWorldHint": false
+	}
+
+	server_core.register_tool(tool_name, description, input_schema,
+						  Callable(self, "_tool_instantiate_scene"),
+						  output_schema, annotations,
+						  "supplementary", "Scene-Advanced")
+
+func _tool_instantiate_scene(params: Dictionary) -> Dictionary:
+	var scene_path: String = str(params.get("scene_path", "")).strip_edges()
+	var parent_path: String = str(params.get("parent_path", "")).strip_edges()
+	var instance_name: String = str(params.get("instance_name", "")).strip_edges()
+
+	# Parameter validation (runs before editor access so it is testable headless)
+	if scene_path.is_empty():
+		return {"error": "Missing required parameter: scene_path"}
+
+	var validation: Dictionary = PathValidator.validate_file_path(scene_path, [".tscn"])
+	if not validation["valid"]:
+		return {"error": "Invalid path: " + validation["error"]}
+	scene_path = validation["sanitized"]
+
+	if not ResourceLoader.exists(scene_path):
+		return {"error": "Scene file not found: " + scene_path}
+
+	var editor_interface: EditorInterface = _get_editor_interface()
+	if not editor_interface:
+		return {"error": "Editor interface not available"}
+
+	var scene_root: Node = _get_user_scene_root()
+	if not scene_root:
+		return {"error": "No scene is currently open"}
+
+	# Resolve the parent node; default to the scene root.
+	var parent: Node = scene_root
+	if not parent_path.is_empty():
+		parent = _resolve_node_path(parent_path)
+		if not parent:
+			return {"error": "Parent node not found: " + parent_path}
+
+	# Load and instance the packed scene.
+	var packed_scene: PackedScene = ResourceLoader.load(scene_path) as PackedScene
+	if not packed_scene:
+		return {"error": "Failed to load scene as PackedScene: " + scene_path}
+
+	var instance: Node = packed_scene.instantiate()
+	if not instance:
+		return {"error": "Failed to instantiate scene: " + scene_path}
+
+	if not instance_name.is_empty():
+		instance.name = instance_name
+
+	# Traverse the parent chain to find the correct owner for nested/instanced scenes.
+	var correct_owner: Node = scene_root
+	if scene_root and parent != scene_root:
+		var current: Node = parent
+		while current and current != scene_root:
+			if current.owner and current.owner != scene_root and current.owner != current:
+				correct_owner = current.owner
+				break
+			current = current.get_parent()
+
+	# Wrap in EditorUndoRedoManager so the editor tracks the change.
+	var undo_redo: EditorUndoRedoManager = editor_interface.get_editor_undo_redo()
+	if undo_redo:
+		undo_redo.create_action("Instantiate Scene: " + scene_path.get_file())
+		undo_redo.add_do_method(parent, "add_child", instance)
+		undo_redo.add_do_method(instance, "set_owner", correct_owner)
+		undo_redo.add_undo_method(parent, "remove_child", instance)
+		undo_redo.commit_action()
+	else:
+		parent.add_child(instance)
+		if correct_owner:
+			instance.owner = correct_owner
+
+	editor_interface.mark_scene_as_unsaved()
+
+	# Build a friendly /root-relative path for the new instance.
+	var instance_friendly: String = str(instance.get_path())
+	var root_full: String = str(scene_root.get_path())
+	if instance_friendly.begins_with(root_full):
+		instance_friendly = "/root/" + scene_root.name + instance_friendly.substr(root_full.length())
+
+	return {
+		"status": "success",
+		"scene_path": scene_path,
+		"instance_path": instance_friendly,
+		"node_type": instance.get_class()
+	}
+
+# ============================================================================
+# save_branch_as_scene - Save a node subtree as a reusable .tscn file
+# ============================================================================
+
+func _register_save_branch_as_scene(server_core: RefCounted) -> void:
+	var tool_name: String = "save_branch_as_scene"
+	var description: String = "Save a node and all of its descendants from the currently edited scene as a reusable scene file (.tscn). Useful for extracting a designed UI branch (e.g. a card layout) into a prefab. Does not modify the source scene tree."
+
+	# inputSchema
+	var input_schema: Dictionary = {
+		"type": "object",
+		"properties": {
+			"node_path": {
+				"type": "string",
+				"description": "Path to the branch root node in the edited scene (e.g. '/root/Main/CardLayout')."
+			},
+			"scene_path": {
+				"type": "string",
+				"description": "Path where the branch will be saved (e.g. 'res://scenes/Card.tscn')."
+			}
+		},
+		"required": ["node_path", "scene_path"]
+	}
+
+	# outputSchema
+	var output_schema: Dictionary = {
+		"type": "object",
+		"properties": {
+			"status": {"type": "string"},
+			"saved_path": {"type": "string"},
+			"node_count": {"type": "integer"}
+		}
+	}
+
+	# annotations
+	var annotations: Dictionary = {
+		"readOnlyHint": false,
+		"destructiveHint": false,
+		"idempotentHint": false,
+		"openWorldHint": false
+	}
+
+	server_core.register_tool(tool_name, description, input_schema,
+						  Callable(self, "_tool_save_branch_as_scene"),
+						  output_schema, annotations,
+						  "supplementary", "Scene-Advanced")
+
+func _tool_save_branch_as_scene(params: Dictionary) -> Dictionary:
+	var node_path: String = str(params.get("node_path", "")).strip_edges()
+	var scene_path: String = str(params.get("scene_path", "")).strip_edges()
+
+	# Parameter validation (runs before editor access so it is testable headless)
+	if node_path.is_empty():
+		return {"error": "Missing required parameter: node_path"}
+	if scene_path.is_empty():
+		return {"error": "Missing required parameter: scene_path"}
+
+	var validation: Dictionary = PathValidator.validate_file_path(scene_path, [".tscn"])
+	if not validation["valid"]:
+		return {"error": "Invalid path: " + validation["error"]}
+	scene_path = validation["sanitized"]
+
+	var editor_interface: EditorInterface = _get_editor_interface()
+	if not editor_interface:
+		return {"error": "Editor interface not available"}
+
+	var scene_root: Node = _get_user_scene_root()
+	if not scene_root:
+		return {"error": "No scene is currently open"}
+
+	var source: Node = _resolve_node_path(node_path)
+	if not source:
+		return {"error": "Node not found: " + node_path}
+	if source == scene_root:
+		return {"error": "Cannot save the scene root as a branch. Use save_scene instead."}
+
+	# Duplicate the branch so we can reassign ownership without mutating the
+	# live scene, then own every descendant by the duplicate root so pack()
+	# includes the whole subtree.
+	var branch: Node = source.duplicate()
+	if not branch:
+		return {"error": "Failed to duplicate branch: " + node_path}
+	_assign_owner_recursive(branch, branch)
+
+	var node_count: int = _count_nodes(branch)
+
+	var packed_scene: PackedScene = PackedScene.new()
+	var pack_error: Error = packed_scene.pack(branch)
+	branch.free()
+	if pack_error != OK:
+		return {"error": "Failed to pack branch: " + error_string(pack_error)}
+
+	var save_error: Error = ResourceSaver.save(packed_scene, scene_path)
+	if save_error != OK:
+		return {"error": "Failed to save scene: " + error_string(save_error)}
+
+	return {
+		"status": "success",
+		"saved_path": scene_path,
+		"node_count": node_count
+	}
+
+# Resolve a /root-relative node path within the edited scene tree.
+func _resolve_node_path(node_path: String) -> Node:
+	var scene_root: Node = _get_user_scene_root()
+	if not scene_root:
+		return null
+
+	if node_path == "/root" or node_path.is_empty():
+		return scene_root
+
+	var relative: String = node_path.trim_prefix("/root/")
+	var parts: PackedStringArray = relative.split("/")
+
+	if parts.size() > 0 and parts[0] == scene_root.name:
+		if parts.size() == 1:
+			return scene_root
+		var sub_path: String = "/".join(parts.slice(1))
+		return scene_root.get_node_or_null(sub_path)
+
+	return scene_root.get_node_or_null(relative)
+
+# Recursively set the owner of every descendant so PackedScene.pack() captures
+# the full subtree.
+func _assign_owner_recursive(node: Node, root: Node) -> void:
+	for child in node.get_children():
+		child.owner = root
+		_assign_owner_recursive(child, root)
 
 # 辅助函数：递归收集场景文件
 func _collect_scenes(directory_path: String, result: Array[String]) -> void:
