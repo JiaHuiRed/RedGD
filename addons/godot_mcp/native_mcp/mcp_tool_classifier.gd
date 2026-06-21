@@ -201,6 +201,8 @@ func _build_classifications() -> void:
 		{"name": "set_project_setting", "category": "supplementary", "group": "Project-Advanced"},
 		{"name": "add_project_autoload", "category": "supplementary", "group": "Project-Advanced"},
 		{"name": "remove_project_autoload", "category": "supplementary", "group": "Project-Advanced"},
+		{"name": "create_animation", "category": "supplementary", "group": "Project-Advanced"},
+		{"name": "insert_animation_keys", "category": "supplementary", "group": "Project-Advanced"},
 	]
 
 	for item in classifications:

@@ -18,7 +18,7 @@
 
 ## 工具概述
 
-Godot MCP Native 实现了 **191 个工具**，分为 6 大类（含核心和补充工具）：
+Godot MCP Native 实现了 **193 个工具**，分为 6 大类（含核心和补充工具）：
 
 | 类别 | 核心工具 | 补充工具 | 总计 | 源文件 | 用途 |
 |------|----------|----------|------|--------|------|
@@ -27,7 +27,7 @@ Godot MCP Native 实现了 **191 个工具**，分为 6 大类（含核心和补
 | [Scene Tools](#scene-tools) | 4 | 6 | 10 | `scene_tools_native.gd` | 场景管理（创建、保存、打开、列出、实例化预制场景、节点分支另存为场景） |
 | [Editor Tools](#editor-tools) | 4 | 19 | 23 | `editor_tools_native.gd` | 编辑器操作（运行、停止、状态、截图、信号、导出、选择、缓冲区同步、导入状态） |
 | [Debug Tools](#debug-tools) | 3 | 67 | 70 | `debug_tools_native.gd` | 调试和运行时（日志、断点、栈帧、Profiler、运行时探针、动画、音频、着色器、瓦片地图） |
-| [Project Tools](#project-tools) | 3 | 44 | 47 | `project_tools_native.gd` | 项目配置（信息、设置、测试、输入映射、自动加载、全局类、资源诊断、反向资源关系、迁移检查、弃用 API 扫描、GDExtension 检测、渐变纹理创建、PCK 打包、渲染输出配置、可绘制纹理创建与绘制、自定义/批量资源创建与属性读写、UI 主题创建与设置、项目设置写入、自动加载增删） |
+| [Project Tools](#project-tools) | 3 | 46 | 49 | `project_tools_native.gd` | 项目配置（信息、设置、测试、输入映射、自动加载、全局类、资源诊断、反向资源关系、迁移检查、弃用 API 扫描、GDExtension 检测、渐变纹理创建、PCK 打包、渲染输出配置、可绘制纹理创建与绘制、自定义/批量资源创建与属性读写、UI 主题创建与设置、项目设置写入、自动加载增删、动画资源创建与关键帧插入） |
 
 ### Vibe Coding / 免打扰模式
 
@@ -4868,6 +4868,60 @@ Continue：恢复执行。
 
 ---
 
+### 192. create_animation
+
+创建并保存一个 `Animation` 资源（`.tres`/`.res`/`.anim`），用于在编辑期编排卡牌、UI 和特效动画，运行时由 `AnimationPlayer` 播放。随后使用 `insert_animation_keys` 添加轨道和关键帧。
+
+**参数**：
+| 参数 | 类型 | 必需 | 描述 |
+|------|------|------|------|
+| `animation_path` | string | 是 | 动画保存路径（`.tres`/`.res`/`.anim`），例如 `res://anim/card_draw.tres` |
+| `length` | number | 否 | 动画长度（秒），> 0 时生效 |
+| `loop_mode` | string | 否 | 循环模式：`none` / `linear` / `pingpong` |
+| `step` | number | 否 | 关键帧吸附步长（秒），> 0 时生效 |
+
+**返回值**：
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| `status` | string | `"success"` |
+| `animation_path` | string | 保存路径 |
+| `length` | number | 最终动画长度 |
+| `loop_mode` | string | 最终循环模式名称 |
+| `step` | number | 最终步长 |
+
+**注解**：`readOnlyHint=false`, `destructiveHint=false`, `idempotentHint=false`, `openWorldHint=false`
+
+---
+
+### 193. insert_animation_keys
+
+加载已有 `Animation` 资源，确保给定路径的轨道存在，插入关键帧并重新保存。`track_type` 为 `value` 时针对 `Node:property` 路径（如 `Sprite2D:modulate`、`.:position`）；`position_3d`/`rotation_3d`/`scale_3d` 针对节点路径。值轨道可传 `value_type` 将关键帧值转换为对应类型。插入超出当前长度的关键帧时会自动增长动画长度。
+
+**参数**：
+| 参数 | 类型 | 必需 | 描述 |
+|------|------|------|------|
+| `animation_path` | string | 是 | 已存在的动画文件路径（`.tres`/`.res`/`.anim`） |
+| `track_path` | string | 是 | 值轨道为 `Node:property` 路径；变换轨道为节点路径 |
+| `track_type` | string | 否 | 轨道类型：`value`（默认）/ `position_3d` / `rotation_3d` / `scale_3d` |
+| `value_type` | string | 否 | 值轨道关键帧值的转换类型：`int`/`float`/`bool`/`string`/`vector2`/`vector3`/`color` |
+| `keys` | array | 是 | 关键帧数组，元素为 `{time: number, value: <any>}` |
+| `reuse_track` | boolean | 否 | 复用匹配路径和类型的已有轨道而非新建（默认 `true`） |
+
+**返回值**：
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| `status` | string | `"success"` |
+| `animation_path` | string | 动画路径 |
+| `track_path` | string | 轨道路径 |
+| `track_type` | string | 轨道类型 |
+| `track_index` | integer | 使用的轨道索引 |
+| `keys_inserted` | integer | 插入的关键帧数量 |
+| `created_track` | boolean | 是否新建了轨道 |
+
+**注解**：`readOnlyHint=false`, `destructiveHint=false`, `idempotentHint=false`, `openWorldHint=false`
+
+---
+
 ## 通用数据类型
 
 ### Vector2
@@ -4967,7 +5021,7 @@ Continue：恢复执行。
 
 ## 总结
 
-本手册详细说明了 Godot MCP Native 项目的所有核心工具及部分补充工具。项目共 **191 个工具**（30 核心 + 161 补充），所有工具均可通过 MCP 工具管理面板按分组动态启用/禁用。补充工具（`*-Advanced` 分组）默认不启用，需在工具管理面板中手动开启。
+本手册详细说明了 Godot MCP Native 项目的所有核心工具及部分补充工具。项目共 **193 个工具**（30 核心 + 163 补充），所有工具均可通过 MCP 工具管理面板按分组动态启用/禁用。补充工具（`*-Advanced` 分组）默认不启用，需在工具管理面板中手动开启。
 
 **提示**：
 - 使用 `tools/list` 方法获取所有工具的实时列表和完整 JSON Schema

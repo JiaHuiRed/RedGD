@@ -74,6 +74,8 @@ func register_tools(server_core: RefCounted) -> void:
 	_register_set_project_setting(server_core)
 	_register_add_project_autoload(server_core)
 	_register_remove_project_autoload(server_core)
+	_register_create_animation(server_core)
+	_register_insert_animation_keys(server_core)
 
 # ============================================================================
 # get_project_info - 获取项目信息
@@ -5823,3 +5825,273 @@ func _tool_remove_project_autoload(params: Dictionary) -> Dictionary:
 		"removed_value": removed_value,
 		"persisted": persisted
 	}
+
+# ============================================================================
+# create_animation - Create and save an Animation resource for editor-phase
+# authoring of card/UI/FX motion (used by AnimationPlayer at runtime).
+# ============================================================================
+
+const _ANIMATION_LOOP_MODES: Dictionary = {
+	"none": Animation.LOOP_NONE,
+	"linear": Animation.LOOP_LINEAR,
+	"pingpong": Animation.LOOP_PINGPONG
+}
+
+func _register_create_animation(server_core: RefCounted) -> void:
+	var tool_name: String = "create_animation"
+	var description: String = "Create and save an Animation resource (.tres/.res/.anim) for editor-phase authoring of card, UI, and FX motion that an AnimationPlayer plays at runtime. Set length (seconds), loop_mode (none/linear/pingpong), and step (keyframe snap in seconds). Use insert_animation_keys afterwards to add tracks and keyframes."
+
+	var input_schema: Dictionary = {
+		"type": "object",
+		"properties": {
+			"animation_path": {"type": "string", "description": "Save path for the animation (.tres/.res/.anim), e.g. res://anim/card_draw.tres."},
+			"length": {"type": "number", "description": "Optional animation length in seconds. Must be > 0 to apply."},
+			"loop_mode": {"type": "string", "description": "Optional loop mode.", "enum": ["none", "linear", "pingpong"]},
+			"step": {"type": "number", "description": "Optional keyframe snap step in seconds. Must be > 0 to apply."}
+		},
+		"required": ["animation_path"]
+	}
+
+	var output_schema: Dictionary = {
+		"type": "object",
+		"properties": {
+			"status": {"type": "string"},
+			"animation_path": {"type": "string"},
+			"length": {"type": "number"},
+			"loop_mode": {"type": "string"},
+			"step": {"type": "number"}
+		}
+	}
+
+	var annotations: Dictionary = {
+		"readOnlyHint": false,
+		"destructiveHint": false,
+		"idempotentHint": false,
+		"openWorldHint": false
+	}
+
+	server_core.register_tool(tool_name, description, input_schema,
+						  Callable(self, "_tool_create_animation"),
+						  output_schema, annotations,
+						  "supplementary", "Project-Advanced")
+
+func _tool_create_animation(params: Dictionary) -> Dictionary:
+	var animation_path: String = str(params.get("animation_path", "")).strip_edges()
+	if animation_path.is_empty():
+		return {"error": "Missing required parameter: animation_path"}
+
+	var validation: Dictionary = PathValidator.validate_file_path(animation_path, [".tres", ".res", ".anim"])
+	if not validation["valid"]:
+		return {"error": "Invalid path: " + validation["error"]}
+	animation_path = validation["sanitized"]
+
+	var animation: Animation = Animation.new()
+
+	var length: float = float(params.get("length", 0.0))
+	if length > 0.0:
+		animation.length = length
+
+	if params.has("loop_mode"):
+		var loop_key: String = str(params.get("loop_mode", "")).strip_edges().to_lower()
+		if not _ANIMATION_LOOP_MODES.has(loop_key):
+			return {"error": "Invalid loop_mode '%s'. Expected one of: none, linear, pingpong." % loop_key}
+		animation.loop_mode = _ANIMATION_LOOP_MODES[loop_key]
+
+	var step: float = float(params.get("step", 0.0))
+	if step > 0.0:
+		animation.step = step
+
+	var dir_path: String = animation_path.get_base_dir()
+	if not dir_path.is_empty() and not DirAccess.dir_exists_absolute(dir_path):
+		var mk: Error = DirAccess.make_dir_recursive_absolute(dir_path)
+		if mk != OK:
+			return {"error": "Failed to create directory: " + dir_path}
+
+	var error: Error = ResourceSaver.save(animation, animation_path)
+	if error != OK:
+		return {"error": "Failed to save animation: " + error_string(error)}
+
+	return {
+		"status": "success",
+		"animation_path": animation_path,
+		"length": animation.length,
+		"loop_mode": _animation_loop_mode_name(animation.loop_mode),
+		"step": animation.step
+	}
+
+func _animation_loop_mode_name(mode: int) -> String:
+	for key in _ANIMATION_LOOP_MODES:
+		if _ANIMATION_LOOP_MODES[key] == mode:
+			return key
+	return "none"
+
+# ============================================================================
+# insert_animation_keys - Add a track (if missing) on an existing Animation
+# and insert keyframes, then re-save. Supports value and 3D transform tracks.
+# ============================================================================
+
+const _ANIMATION_TRACK_TYPES: Dictionary = {
+	"value": Animation.TYPE_VALUE,
+	"position_3d": Animation.TYPE_POSITION_3D,
+	"rotation_3d": Animation.TYPE_ROTATION_3D,
+	"scale_3d": Animation.TYPE_SCALE_3D
+}
+
+func _register_insert_animation_keys(server_core: RefCounted) -> void:
+	var tool_name: String = "insert_animation_keys"
+	var description: String = "Load an existing Animation resource, ensure a track for the given path exists, insert keyframes, and re-save. track_type 'value' targets a 'Node:property' path (e.g. 'Sprite2D:modulate', '.:position'); 'position_3d'/'rotation_3d'/'scale_3d' target a node path. For value tracks pass value_type to coerce key values (int/float/bool/string/vector2/vector3/color). Use to author card/UI/FX motion driven by an AnimationPlayer."
+
+	var input_schema: Dictionary = {
+		"type": "object",
+		"properties": {
+			"animation_path": {"type": "string", "description": "Path to an existing animation file (.tres/.res/.anim)."},
+			"track_path": {"type": "string", "description": "For value tracks, a 'Node:property' path; for transform tracks, a node path."},
+			"track_type": {"type": "string", "description": "Track type. Default 'value'.", "enum": ["value", "position_3d", "rotation_3d", "scale_3d"], "default": "value"},
+			"value_type": {"type": "string", "description": "Optional coercion for value-track key values.", "enum": ["int", "float", "bool", "string", "vector2", "vector3", "color"]},
+			"keys": {"type": "array", "description": "Keyframes as objects {time: number, value: <any>}.", "items": {"type": "object"}},
+			"reuse_track": {"type": "boolean", "description": "Reuse an existing track that matches path and type instead of adding a new one. Default true.", "default": true}
+		},
+		"required": ["animation_path", "track_path", "keys"]
+	}
+
+	var output_schema: Dictionary = {
+		"type": "object",
+		"properties": {
+			"status": {"type": "string"},
+			"animation_path": {"type": "string"},
+			"track_path": {"type": "string"},
+			"track_type": {"type": "string"},
+			"track_index": {"type": "integer"},
+			"keys_inserted": {"type": "integer"},
+			"created_track": {"type": "boolean"}
+		}
+	}
+
+	var annotations: Dictionary = {
+		"readOnlyHint": false,
+		"destructiveHint": false,
+		"idempotentHint": false,
+		"openWorldHint": false
+	}
+
+	server_core.register_tool(tool_name, description, input_schema,
+						  Callable(self, "_tool_insert_animation_keys"),
+						  output_schema, annotations,
+						  "supplementary", "Project-Advanced")
+
+func _tool_insert_animation_keys(params: Dictionary) -> Dictionary:
+	var animation_path: String = str(params.get("animation_path", "")).strip_edges()
+	var track_path: String = str(params.get("track_path", "")).strip_edges()
+	if animation_path.is_empty():
+		return {"error": "Missing required parameter: animation_path"}
+	if track_path.is_empty():
+		return {"error": "Missing required parameter: track_path"}
+	if not params.has("keys"):
+		return {"error": "Missing required parameter: keys"}
+
+	var keys: Variant = params["keys"]
+	if not (keys is Array) or (keys as Array).is_empty():
+		return {"error": "Parameter 'keys' must be a non-empty array of {time, value} objects"}
+
+	var track_type_name: String = str(params.get("track_type", "value")).strip_edges().to_lower()
+	if track_type_name.is_empty():
+		track_type_name = "value"
+	if not _ANIMATION_TRACK_TYPES.has(track_type_name):
+		return {"error": "Invalid track_type '%s'. Expected one of: value, position_3d, rotation_3d, scale_3d." % track_type_name}
+	var track_type: int = _ANIMATION_TRACK_TYPES[track_type_name]
+
+	var validation: Dictionary = PathValidator.validate_file_path(animation_path, [".tres", ".res", ".anim"])
+	if not validation["valid"]:
+		return {"error": "Invalid path: " + validation["error"]}
+	animation_path = validation["sanitized"]
+
+	if not ResourceLoader.exists(animation_path):
+		return {"error": "Animation not found: " + animation_path}
+	var animation: Animation = ResourceLoader.load(animation_path) as Animation
+	if not animation:
+		return {"error": "Resource is not an Animation: " + animation_path}
+
+	var node_path: NodePath = NodePath(track_path)
+	var created_track: bool = false
+	var track_index: int = -1
+	if bool(params.get("reuse_track", true)):
+		track_index = animation.find_track(node_path, track_type)
+	if track_index < 0:
+		track_index = animation.add_track(track_type)
+		animation.track_set_path(track_index, node_path)
+		created_track = true
+
+	var value_type: String = str(params.get("value_type", "")).strip_edges().to_lower()
+	var keys_inserted: int = 0
+	for entry in (keys as Array):
+		if not (entry is Dictionary):
+			return {"error": "Each key must be an object with 'time' and 'value'"}
+		var key_dict: Dictionary = entry
+		if not key_dict.has("time"):
+			return {"error": "Each key must include 'time'"}
+		if not key_dict.has("value"):
+			return {"error": "Each key must include 'value'"}
+		var time: float = float(key_dict["time"])
+		if time < 0.0:
+			return {"error": "Key 'time' must be >= 0"}
+		var insert_result: Dictionary = _insert_animation_key(animation, track_index, track_type, track_type_name, time, key_dict["value"], value_type)
+		if insert_result.has("error"):
+			return insert_result
+		keys_inserted += 1
+
+	# Grow the animation length to fit inserted keys when needed.
+	var track_end: float = animation.track_get_key_time(track_index, animation.track_get_key_count(track_index) - 1)
+	if track_end > animation.length:
+		animation.length = track_end
+
+	var error: Error = ResourceSaver.save(animation, animation_path)
+	if error != OK:
+		return {"error": "Failed to save animation: " + error_string(error)}
+
+	return {
+		"status": "success",
+		"animation_path": animation_path,
+		"track_path": track_path,
+		"track_type": track_type_name,
+		"track_index": track_index,
+		"keys_inserted": keys_inserted,
+		"created_track": created_track
+	}
+
+func _insert_animation_key(animation: Animation, track_index: int, track_type: int, track_type_name: String, time: float, raw_value: Variant, value_type: String) -> Dictionary:
+	match track_type:
+		Animation.TYPE_VALUE:
+			var coerced: Dictionary = _coerce_setting_value(raw_value, value_type)
+			if coerced.has("error"):
+				return coerced
+			animation.track_insert_key(track_index, time, coerced["value"])
+		Animation.TYPE_POSITION_3D, Animation.TYPE_SCALE_3D:
+			var vec: Variant = _parse_vector3(raw_value)
+			if vec == null:
+				return {"error": "Key value for %s must be a Vector3 ([x, y, z] or {x, y, z})" % track_type_name}
+			if track_type == Animation.TYPE_POSITION_3D:
+				animation.position_track_insert_key(track_index, time, vec)
+			else:
+				animation.scale_track_insert_key(track_index, time, vec)
+		Animation.TYPE_ROTATION_3D:
+			var quat: Variant = _parse_quaternion(raw_value)
+			if quat == null:
+				return {"error": "Key value for rotation_3d must be a quaternion ([x, y, z, w]) or euler angles ([x, y, z])"}
+			animation.rotation_track_insert_key(track_index, time, quat)
+		_:
+			return {"error": "Unsupported track type"}
+	return {}
+
+static func _parse_quaternion(value: Variant) -> Variant:
+	if value is Quaternion:
+		return value
+	if value is Dictionary:
+		if value.has("w"):
+			return Quaternion(float(value.get("x", 0.0)), float(value.get("y", 0.0)), float(value.get("z", 0.0)), float(value.get("w", 1.0)))
+		return Quaternion.from_euler(Vector3(float(value.get("x", 0.0)), float(value.get("y", 0.0)), float(value.get("z", 0.0))))
+	if value is Array:
+		if value.size() >= 4:
+			return Quaternion(float(value[0]), float(value[1]), float(value[2]), float(value[3]))
+		if value.size() >= 3:
+			return Quaternion.from_euler(Vector3(float(value[0]), float(value[1]), float(value[2])))
+	return null
