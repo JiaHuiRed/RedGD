@@ -213,7 +213,7 @@ func _on_copy_url_pressed() -> void:
 		port = _plugin.http_port
 	elif _http_port_spin:
 		port = int(_http_port_spin.value)
-	DisplayServer.clipboard_set("http://127.0.0.1:%d" % port)
+	DisplayServer.clipboard_set("http://127.0.0.1:%d/mcp" % port)
 	if _copy_url_button:
 		_copy_url_button.text = _tr("ui.copied")
 		await get_tree().create_timer(1.2).timeout
@@ -598,6 +598,11 @@ func _update_ui_state() -> void:
 		_start_button.disabled = is_running
 	if _stop_button:
 		_stop_button.disabled = not is_running
+	if _copy_url_button:
+		var mode: String = "stdio"
+		if _plugin and _plugin.get("transport_mode") != null:
+			mode = _plugin.transport_mode
+		_copy_url_button.visible = (mode == "http" and is_running)
 
 	if _plugin:
 		if _auto_start_check:
