@@ -43,6 +43,10 @@ func register_tools(server_core: RefCounted) -> void:
 	_register_inspect_tileset_resource(server_core)
 	_register_list_project_resources(server_core)
 	_register_create_resource(server_core)
+	_register_create_custom_resource(server_core)
+	_register_batch_create_resources(server_core)
+	_register_update_resource_properties(server_core)
+	_register_read_resource_properties(server_core)
 	_register_get_project_structure(server_core)
 	_register_reimport_resources(server_core)
 	_register_get_import_metadata(server_core)
@@ -1681,6 +1685,436 @@ func _parse_key_value_string(value: String) -> Dictionary:
 		if kv.size() == 2:
 			result[kv[0]] = kv[1]
 	return result
+
+# ============================================================================
+# Shared helpers for data-driven resource tools
+# ============================================================================
+
+# Resolve a Resource instance from an explicit script path, a built-in ClassDB
+# type, or a project global class_name. Returns {"resource": Resource} on
+# success or {"error": String} on failure.
+func _instantiate_resource_for_write(resource_type: String, script_path: String) -> Dictionary:
+	if not script_path.is_empty():
+		if not ResourceLoader.exists(script_path):
+			return {"error": "Script not found: " + script_path}
+		var script: Resource = load(script_path)
+		if not (script is Script):
+			return {"error": "Path is not a script: " + script_path}
+		var instance: Variant = script.new()
+		if not (instance is Resource):
+			return {"error": "Script does not extend Resource: " + script_path}
+		return {"resource": instance}
+
+	if resource_type.is_empty():
+		return {"error": "Provide resource_type (built-in type or class_name) or script_path"}
+
+	if ClassDB.class_exists(resource_type):
+		if not ClassDB.is_parent_class(resource_type, "Resource"):
+			return {"error": "Type '%s' is not a Resource type" % resource_type}
+		if not ClassDB.can_instantiate(resource_type):
+			return {"error": "Cannot instantiate Resource class: " + resource_type}
+		return {"resource": ClassDB.instantiate(resource_type)}
+
+	var global_entry: Dictionary = _find_project_global_class_entry(resource_type)
+	if global_entry.is_empty():
+		return {"error": "Unknown resource type or class_name: " + resource_type}
+	var global_script_path: String = str(global_entry.get("path", ""))
+	var global_script: Resource = load(global_script_path)
+	if not (global_script is Script):
+		return {"error": "Failed to load class script: " + global_script_path}
+	var global_instance: Variant = global_script.new()
+	if not (global_instance is Resource):
+		return {"error": "Class '%s' does not extend Resource" % resource_type}
+	return {"resource": global_instance}
+
+# Apply a properties dict onto a resource, converting each value to the target
+# property's declared type. Records applied/skipped property names in place.
+func _apply_properties_to_resource(resource: Resource, properties: Dictionary, applied: Array, skipped: Array) -> void:
+	for prop_name in properties:
+		if prop_name in resource:
+			var converted_val: Variant = _convert_value_for_resource(resource, prop_name, properties[prop_name])
+			resource.set(prop_name, converted_val)
+			applied.append(prop_name)
+		else:
+			skipped.append(prop_name)
+
+# Convert a resource property value into a JSON-friendly representation.
+func _serialize_resource_value(value: Variant) -> Variant:
+	match typeof(value):
+		TYPE_NIL, TYPE_BOOL, TYPE_INT, TYPE_FLOAT, TYPE_STRING:
+			return value
+		TYPE_STRING_NAME:
+			return str(value)
+		TYPE_VECTOR2:
+			return {"x": value.x, "y": value.y}
+		TYPE_VECTOR3:
+			return {"x": value.x, "y": value.y, "z": value.z}
+		TYPE_COLOR:
+			return {"r": value.r, "g": value.g, "b": value.b, "a": value.a}
+		TYPE_ARRAY:
+			var arr: Array = []
+			for item in value:
+				arr.append(_serialize_resource_value(item))
+			return arr
+		TYPE_DICTIONARY:
+			var dict: Dictionary = {}
+			for key in value:
+				dict[str(key)] = _serialize_resource_value(value[key])
+			return dict
+		TYPE_OBJECT:
+			if value is Resource:
+				var res_path: String = value.resource_path
+				if not res_path.is_empty():
+					return res_path
+				return "<SubResource:%s>" % value.get_class()
+			return str(value)
+		_:
+			return str(value)
+
+# ============================================================================
+# create_custom_resource - create a custom/script-backed Resource instance
+# ============================================================================
+
+func _register_create_custom_resource(server_core: RefCounted) -> void:
+	var tool_name: String = "create_custom_resource"
+	var description: String = "Create a .tres/.res file for a custom class_name Resource (or a Resource script by path), setting exported properties. Unlike create_resource, this resolves project global classes (e.g. CardData) and explicit script paths, not just built-in engine types."
+
+	var input_schema: Dictionary = {
+		"type": "object",
+		"properties": {
+			"resource_path": {"type": "string", "description": "Save path (.tres or .res), e.g. res://data/cards/strike.tres."},
+			"resource_type": {"type": "string", "description": "Built-in Resource type or a project class_name (e.g. CardData). Provide this or script_path."},
+			"script_path": {"type": "string", "description": "Path to a Resource script to instantiate (e.g. res://data/card_data.gd). Takes precedence over resource_type."},
+			"properties": {"type": "object", "description": "Exported properties to set on the new resource."}
+		},
+		"required": ["resource_path"]
+	}
+
+	var output_schema: Dictionary = {
+		"type": "object",
+		"properties": {
+			"status": {"type": "string"},
+			"resource_path": {"type": "string"},
+			"resource_type": {"type": "string"},
+			"script_path": {"type": "string"},
+			"applied_properties": {"type": "array", "items": {"type": "string"}},
+			"skipped_properties": {"type": "array", "items": {"type": "string"}}
+		}
+	}
+
+	var annotations: Dictionary = {
+		"readOnlyHint": false,
+		"destructiveHint": false,
+		"idempotentHint": false,
+		"openWorldHint": false
+	}
+
+	server_core.register_tool(tool_name, description, input_schema,
+						  Callable(self, "_tool_create_custom_resource"),
+						  output_schema, annotations,
+						  "supplementary", "Project-Advanced")
+
+func _tool_create_custom_resource(params: Dictionary) -> Dictionary:
+	var resource_path: String = str(params.get("resource_path", "")).strip_edges()
+	var resource_type: String = str(params.get("resource_type", "")).strip_edges()
+	var script_path: String = str(params.get("script_path", "")).strip_edges()
+	var properties: Dictionary = params.get("properties", {})
+
+	if resource_path.is_empty():
+		return {"error": "Missing required parameter: resource_path"}
+
+	var validation: Dictionary = PathValidator.validate_file_path(resource_path, [".tres", ".res"])
+	if not validation["valid"]:
+		return {"error": "Invalid path: " + validation["error"]}
+	resource_path = validation["sanitized"]
+
+	var instantiated: Dictionary = _instantiate_resource_for_write(resource_type, script_path)
+	if instantiated.has("error"):
+		return {"error": instantiated["error"]}
+	var resource: Resource = instantiated["resource"]
+
+	var applied: Array = []
+	var skipped: Array = []
+	_apply_properties_to_resource(resource, properties, applied, skipped)
+
+	var dir_path: String = resource_path.get_base_dir()
+	if not dir_path.is_empty() and not DirAccess.dir_exists_absolute(dir_path):
+		var mk: Error = DirAccess.make_dir_recursive_absolute(dir_path)
+		if mk != OK:
+			return {"error": "Failed to create directory: " + dir_path}
+
+	var error: Error = ResourceSaver.save(resource, resource_path)
+	if error != OK:
+		return {"error": "Failed to save resource: " + error_string(error)}
+
+	return {
+		"status": "success",
+		"resource_path": resource_path,
+		"resource_type": resource_type,
+		"script_path": script_path,
+		"applied_properties": applied,
+		"skipped_properties": skipped
+	}
+
+# ============================================================================
+# batch_create_resources - create many resources from a list spec
+# ============================================================================
+
+func _register_batch_create_resources(server_core: RefCounted) -> void:
+	var tool_name: String = "batch_create_resources"
+	var description: String = "Create many resource files (.tres) in one call from a list spec. Shared resource_type/script_path/base_path/properties act as defaults that each item may override. Ideal for generating data-driven content such as card, relic, or enemy resource sets."
+
+	var input_schema: Dictionary = {
+		"type": "object",
+		"properties": {
+			"resources": {"type": "array", "description": "List of items. Each item: {resource_path|name, resource_type?, script_path?, properties?}.", "items": {"type": "object"}},
+			"base_path": {"type": "string", "description": "Directory prefix combined with each item's name to build resource_path (e.g. res://data/cards/)."},
+			"resource_type": {"type": "string", "description": "Default built-in type or class_name for items that omit it."},
+			"script_path": {"type": "string", "description": "Default Resource script path for items that omit it."},
+			"properties": {"type": "object", "description": "Default properties merged beneath each item's properties (item values win)."}
+		},
+		"required": ["resources"]
+	}
+
+	var output_schema: Dictionary = {
+		"type": "object",
+		"properties": {
+			"status": {"type": "string"},
+			"created_count": {"type": "integer"},
+			"failed_count": {"type": "integer"},
+			"created": {"type": "array", "items": {"type": "string"}},
+			"failed": {"type": "array", "items": {"type": "object"}}
+		}
+	}
+
+	var annotations: Dictionary = {
+		"readOnlyHint": false,
+		"destructiveHint": false,
+		"idempotentHint": false,
+		"openWorldHint": false
+	}
+
+	server_core.register_tool(tool_name, description, input_schema,
+						  Callable(self, "_tool_batch_create_resources"),
+						  output_schema, annotations,
+						  "supplementary", "Project-Advanced")
+
+func _tool_batch_create_resources(params: Dictionary) -> Dictionary:
+	var items: Array = params.get("resources", [])
+	if items.is_empty():
+		return {"error": "Missing required parameter: resources (non-empty array)"}
+
+	var base_path: String = str(params.get("base_path", "")).strip_edges()
+	var default_type: String = str(params.get("resource_type", "")).strip_edges()
+	var default_script: String = str(params.get("script_path", "")).strip_edges()
+	var default_props: Dictionary = params.get("properties", {})
+
+	var created: Array = []
+	var failed: Array = []
+
+	for index in items.size():
+		var item: Variant = items[index]
+		if not (item is Dictionary):
+			failed.append({"index": index, "error": "Item must be an object"})
+			continue
+
+		var resource_path: String = str(item.get("resource_path", "")).strip_edges()
+		if resource_path.is_empty():
+			var item_name: String = str(item.get("name", "")).strip_edges()
+			if item_name.is_empty() or base_path.is_empty():
+				failed.append({"index": index, "error": "Item needs resource_path, or name + base_path"})
+				continue
+			resource_path = base_path.path_join(item_name)
+			if not (resource_path.ends_with(".tres") or resource_path.ends_with(".res")):
+				resource_path += ".tres"
+
+		var item_type: String = str(item.get("resource_type", default_type)).strip_edges()
+		var item_script: String = str(item.get("script_path", default_script)).strip_edges()
+
+		var merged_props: Dictionary = default_props.duplicate(true)
+		var item_props: Dictionary = item.get("properties", {})
+		for key in item_props:
+			merged_props[key] = item_props[key]
+
+		var single_params: Dictionary = {
+			"resource_path": resource_path,
+			"resource_type": item_type,
+			"script_path": item_script,
+			"properties": merged_props
+		}
+		var result: Dictionary = _tool_create_custom_resource(single_params)
+		if result.has("error"):
+			failed.append({"index": index, "resource_path": resource_path, "error": result["error"]})
+		else:
+			created.append(resource_path)
+
+	return {
+		"status": "success" if failed.is_empty() else "partial",
+		"created_count": created.size(),
+		"failed_count": failed.size(),
+		"created": created,
+		"failed": failed
+	}
+
+# ============================================================================
+# update_resource_properties - edit an existing resource file in place
+# ============================================================================
+
+func _register_update_resource_properties(server_core: RefCounted) -> void:
+	var tool_name: String = "update_resource_properties"
+	var description: String = "Load an existing resource file (.tres/.res), set/merge exported properties, and re-save it. Use to tweak data such as card cost or enemy HP without rewriting the file by hand."
+
+	var input_schema: Dictionary = {
+		"type": "object",
+		"properties": {
+			"resource_path": {"type": "string", "description": "Path to an existing resource file."},
+			"properties": {"type": "object", "description": "Properties to set on the resource."}
+		},
+		"required": ["resource_path", "properties"]
+	}
+
+	var output_schema: Dictionary = {
+		"type": "object",
+		"properties": {
+			"status": {"type": "string"},
+			"resource_path": {"type": "string"},
+			"updated_properties": {"type": "array", "items": {"type": "string"}},
+			"skipped_properties": {"type": "array", "items": {"type": "string"}}
+		}
+	}
+
+	var annotations: Dictionary = {
+		"readOnlyHint": false,
+		"destructiveHint": false,
+		"idempotentHint": true,
+		"openWorldHint": false
+	}
+
+	server_core.register_tool(tool_name, description, input_schema,
+						  Callable(self, "_tool_update_resource_properties"),
+						  output_schema, annotations,
+						  "supplementary", "Project-Advanced")
+
+func _tool_update_resource_properties(params: Dictionary) -> Dictionary:
+	var resource_path: String = str(params.get("resource_path", "")).strip_edges()
+	var properties: Dictionary = params.get("properties", {})
+
+	if resource_path.is_empty():
+		return {"error": "Missing required parameter: resource_path"}
+	if properties.is_empty():
+		return {"error": "Missing required parameter: properties (non-empty object)"}
+
+	var validation: Dictionary = PathValidator.validate_file_path(resource_path, [".tres", ".res"])
+	if not validation["valid"]:
+		return {"error": "Invalid path: " + validation["error"]}
+	resource_path = validation["sanitized"]
+
+	if not ResourceLoader.exists(resource_path):
+		return {"error": "Resource not found: " + resource_path}
+	var resource: Resource = ResourceLoader.load(resource_path)
+	if not resource:
+		return {"error": "Failed to load resource: " + resource_path}
+
+	var applied: Array = []
+	var skipped: Array = []
+	_apply_properties_to_resource(resource, properties, applied, skipped)
+
+	var error: Error = ResourceSaver.save(resource, resource_path)
+	if error != OK:
+		return {"error": "Failed to save resource: " + error_string(error)}
+
+	return {
+		"status": "success",
+		"resource_path": resource_path,
+		"updated_properties": applied,
+		"skipped_properties": skipped
+	}
+
+# ============================================================================
+# read_resource_properties - dump a resource's exported properties as JSON
+# ============================================================================
+
+func _register_read_resource_properties(server_core: RefCounted) -> void:
+	var tool_name: String = "read_resource_properties"
+	var description: String = "Read a resource file (.tres/.res) and return its exported (script-declared) properties as JSON-friendly values. Optionally include built-in base Resource properties. Use to inspect or verify data-driven content."
+
+	var input_schema: Dictionary = {
+		"type": "object",
+		"properties": {
+			"resource_path": {"type": "string", "description": "Path to an existing resource file."},
+			"include_built_in": {"type": "boolean", "description": "Include built-in base Resource storage properties (default false).", "default": false}
+		},
+		"required": ["resource_path"]
+	}
+
+	var output_schema: Dictionary = {
+		"type": "object",
+		"properties": {
+			"status": {"type": "string"},
+			"resource_path": {"type": "string"},
+			"resource_class": {"type": "string"},
+			"script_path": {"type": "string"},
+			"properties": {"type": "object"},
+			"property_count": {"type": "integer"}
+		}
+	}
+
+	var annotations: Dictionary = {
+		"readOnlyHint": true,
+		"destructiveHint": false,
+		"idempotentHint": true,
+		"openWorldHint": false
+	}
+
+	server_core.register_tool(tool_name, description, input_schema,
+						  Callable(self, "_tool_read_resource_properties"),
+						  output_schema, annotations,
+						  "supplementary", "Project-Advanced")
+
+func _tool_read_resource_properties(params: Dictionary) -> Dictionary:
+	var resource_path: String = str(params.get("resource_path", "")).strip_edges()
+	var include_built_in: bool = bool(params.get("include_built_in", false))
+
+	if resource_path.is_empty():
+		return {"error": "Missing required parameter: resource_path"}
+
+	var validation: Dictionary = PathValidator.validate_file_path(resource_path, [".tres", ".res"])
+	if not validation["valid"]:
+		return {"error": "Invalid path: " + validation["error"]}
+	resource_path = validation["sanitized"]
+
+	if not ResourceLoader.exists(resource_path):
+		return {"error": "Resource not found: " + resource_path}
+	var resource: Resource = ResourceLoader.load(resource_path)
+	if not resource:
+		return {"error": "Failed to load resource: " + resource_path}
+
+	var script_path: String = ""
+	var script: Variant = resource.get_script()
+	if script is Script:
+		script_path = script.resource_path
+
+	var properties: Dictionary = {}
+	for prop in resource.get_property_list():
+		var prop_name: String = str(prop.get("name", ""))
+		var usage: int = int(prop.get("usage", 0))
+		if prop_name.is_empty() or prop_name == "script":
+			continue
+		var is_script_var: bool = (usage & PROPERTY_USAGE_SCRIPT_VARIABLE) != 0
+		var is_storage: bool = (usage & PROPERTY_USAGE_STORAGE) != 0
+		if is_script_var:
+			properties[prop_name] = _serialize_resource_value(resource.get(prop_name))
+		elif include_built_in and is_storage:
+			properties[prop_name] = _serialize_resource_value(resource.get(prop_name))
+
+	return {
+		"status": "success",
+		"resource_path": resource_path,
+		"resource_class": resource.get_class(),
+		"script_path": script_path,
+		"properties": properties,
+		"property_count": properties.size()
+	}
 
 # ============================================================================
 # get_project_structure - 获取项目目录结构

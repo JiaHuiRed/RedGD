@@ -18,7 +18,7 @@
 
 ## 工具概述
 
-Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补充工具）：
+Godot MCP Native 实现了 **183 个工具**，分为 6 大类（含核心和补充工具）：
 
 | 类别 | 核心工具 | 补充工具 | 总计 | 源文件 | 用途 |
 |------|----------|----------|------|--------|------|
@@ -27,7 +27,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 | [Scene Tools](#scene-tools) | 4 | 4 | 8 | `scene_tools_native.gd` | 场景管理（创建、保存、打开、列出） |
 | [Editor Tools](#editor-tools) | 4 | 19 | 23 | `editor_tools_native.gd` | 编辑器操作（运行、停止、状态、截图、信号、导出、选择、缓冲区同步、导入状态） |
 | [Debug Tools](#debug-tools) | 3 | 67 | 70 | `debug_tools_native.gd` | 调试和运行时（日志、断点、栈帧、Profiler、运行时探针、动画、音频、着色器、瓦片地图） |
-| [Project Tools](#project-tools) | 3 | 34 | 37 | `project_tools_native.gd` | 项目配置（信息、设置、测试、输入映射、自动加载、全局类、资源诊断、反向资源关系、迁移检查、弃用 API 扫描、GDExtension 检测、渐变纹理创建、PCK 打包、渲染输出配置、可绘制纹理创建与绘制） |
+| [Project Tools](#project-tools) | 3 | 38 | 41 | `project_tools_native.gd` | 项目配置（信息、设置、测试、输入映射、自动加载、全局类、资源诊断、反向资源关系、迁移检查、弃用 API 扫描、GDExtension 检测、渐变纹理创建、PCK 打包、渲染输出配置、可绘制纹理创建与绘制、自定义/批量资源创建与属性读写） |
 
 ### Vibe Coding / 免打扰模式
 
@@ -2094,7 +2094,105 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 ---
 
-### 75. get_project_structure
+### 75. create_custom_resource
+
+为自定义 `class_name` 资源（或按路径指定的 `Resource` 脚本）创建 `.tres`/`.res` 文件并设置导出属性。与 `create_resource` 不同，本工具可解析项目全局类（如 `CardData`）和显式脚本路径，而不仅限于引擎内置类型。父目录不存在时会自动创建。
+
+**参数**：
+| 参数 | 类型 | 必需 | 描述 |
+|------|------|------|------|
+| `resource_path` | string | 是 | 保存路径（`.tres` 或 `.res`），如 `res://data/cards/strike.tres` |
+| `resource_type` | string | 否 | 内置 Resource 类型或项目 `class_name`（如 `CardData`）。与 `script_path` 二选一 |
+| `script_path` | string | 否 | 要实例化的 Resource 脚本路径（如 `res://data/card_data.gd`），优先级高于 `resource_type` |
+| `properties` | Dictionary | 否 | 要设置的导出属性（支持与 `create_resource` 相同的类型转换） |
+
+**返回值**：
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| `status` | string | `"success"` |
+| `resource_path` | string | 资源路径 |
+| `resource_type` | string | 传入的资源类型 |
+| `script_path` | string | 传入的脚本路径 |
+| `applied_properties` | Array | 实际写入的属性名 |
+| `skipped_properties` | Array | 资源上不存在而被跳过的属性名 |
+
+**注解**：`readOnlyHint=false`, `destructiveHint=false`, `idempotentHint=false`
+
+---
+
+### 76. batch_create_resources
+
+通过列表规格一次性创建多个资源文件（`.tres`）。共享的 `resource_type`/`script_path`/`base_path`/`properties` 作为默认值，每个条目均可覆盖。适合批量生成数据驱动内容（卡牌、遗物、敌人等）。出错条目不会中断其余创建。
+
+**参数**：
+| 参数 | 类型 | 必需 | 描述 |
+|------|------|------|------|
+| `resources` | Array | 是 | 条目列表，每项为 `{resource_path\|name, resource_type?, script_path?, properties?}` |
+| `base_path` | string | 否 | 与每个条目的 `name` 组合成 `resource_path` 的目录前缀（如 `res://data/cards/`） |
+| `resource_type` | string | 否 | 条目未指定时使用的默认内置类型或 `class_name` |
+| `script_path` | string | 否 | 条目未指定时使用的默认 Resource 脚本路径 |
+| `properties` | Dictionary | 否 | 合并到每个条目属性之下的默认属性（条目值优先） |
+
+**返回值**：
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| `status` | string | 全部成功为 `"success"`，部分失败为 `"partial"` |
+| `created_count` | int | 成功创建数量 |
+| `failed_count` | int | 失败数量 |
+| `created` | Array | 已创建的资源路径 |
+| `failed` | Array | 失败条目 `{index, resource_path?, error}` |
+
+**注解**：`readOnlyHint=false`, `destructiveHint=false`, `idempotentHint=false`
+
+---
+
+### 77. update_resource_properties
+
+加载已有资源文件（`.tres`/`.res`），设置/合并导出属性后重新保存。可用于调整卡牌费用、敌人血量等数据，而无需手动改写文件。
+
+**参数**：
+| 参数 | 类型 | 必需 | 描述 |
+|------|------|------|------|
+| `resource_path` | string | 是 | 已有资源文件路径 |
+| `properties` | Dictionary | 是 | 要设置的属性键值对（支持类型转换） |
+
+**返回值**：
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| `status` | string | `"success"` |
+| `resource_path` | string | 资源路径 |
+| `updated_properties` | Array | 实际写入的属性名 |
+| `skipped_properties` | Array | 资源上不存在而被跳过的属性名 |
+
+**注解**：`readOnlyHint=false`, `destructiveHint=false`, `idempotentHint=true`
+
+---
+
+### 78. read_resource_properties
+
+读取资源文件（`.tres`/`.res`）并以 JSON 友好的形式返回其导出（脚本声明）属性。可选地包含内置的基础 `Resource` 属性。用于检视或校验数据驱动内容。
+
+**参数**：
+| 参数 | 类型 | 必需 | 描述 |
+|------|------|------|------|
+| `resource_path` | string | 是 | 已有资源文件路径 |
+| `include_built_in` | bool | 否 | 是否包含内置基础 Resource 存储属性（默认 `false`） |
+
+**返回值**：
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| `status` | string | `"success"` |
+| `resource_path` | string | 资源路径 |
+| `resource_class` | string | 资源的引擎基类名 |
+| `script_path` | string | 背后脚本路径（若有） |
+| `properties` | Dictionary | 属性名到 JSON 友好值的映射 |
+| `property_count` | int | 返回的属性数量 |
+
+**注解**：`readOnlyHint=true`, `destructiveHint=false`, `idempotentHint=true`
+
+---
+
+### 79. get_project_structure
 
 获取项目的目录结构和文件类型统计。
 
@@ -2129,7 +2227,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 这些工具扩展了节点管理功能，支持信号连接、节点组、锚点设置、资源添加、批量操作和场景审计。需在工具管理面板中启用 `Node-Advanced` / `Node-Write-Advanced` 分组后使用。
 
-### 76. batch_update_node_properties
+### 80. batch_update_node_properties
 
 在一个 UndoRedo 动作中批量更新多个节点属性。适用于需要一步撤销的场景事务式编辑。
 
@@ -2152,7 +2250,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 ---
 
-### 77. batch_scene_node_edits
+### 81. batch_scene_node_edits
 
 在一个 UndoRedo 动作中批量执行创建/删除/重命名/移动场景节点编辑，使完整的结构变更可一步撤销。
 
@@ -2174,7 +2272,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 ---
 
-### 78. batch_get_node_properties
+### 82. batch_get_node_properties
 
 在一次调用中读取多个节点的属性。每个请求的节点路径返回一个结果项，减少检查多个节点时的往返次数。
 
@@ -2195,7 +2293,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 ---
 
-### 79. batch_connect_signals
+### 83. batch_connect_signals
 
 在一次调用中连接多个节点信号。每个请求的连接返回一个结果项，减少连接多个信号时的往返次数。
 
@@ -2216,7 +2314,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 ---
 
-### 80. audit_scene_node_persistence
+### 84. audit_scene_node_persistence
 
 审计当前编辑场景的节点 owner 和持久化状态。报告影响场景保存和继承的缺失或无效 owner 关系。
 
@@ -2237,7 +2335,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 ---
 
-### 81. audit_scene_inheritance
+### 85. audit_scene_inheritance
 
 审计当前场景的继承/实例化结构。分类本地节点、实例根节点、继承实例内容和实例化子树中的本地新增。
 
@@ -2263,7 +2361,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 这些工具扩展了脚本管理功能，支持脚本分析、验证、搜索、符号索引、定义查找和引用搜索。需在工具管理面板中启用 `Script-Advanced` 分组后使用。
 
-### 82. list_project_script_symbols
+### 86. list_project_script_symbols
 
 索引项目 GDScript 和 C# 文件中的脚本符号。返回类、继承、函数、信号、属性和常量。
 
@@ -2285,7 +2383,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 ---
 
-### 83. find_script_symbol_definition
+### 87. find_script_symbol_definition
 
 跨项目 GDScript 和 C# 文件查找脚本符号的定义位置。
 
@@ -2310,7 +2408,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 ---
 
-### 84. find_script_symbol_references
+### 88. find_script_symbol_references
 
 跨 GDScript、C# 和场景文件查找脚本符号的文本引用。
 
@@ -2336,7 +2434,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 ---
 
-### 85. rename_script_symbol
+### 89. rename_script_symbol
 
 跨项目文件使用标识符边界文本替换重命名脚本符号。支持 dry-run 预览。
 
@@ -2364,7 +2462,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 ---
 
-### 86. open_script_at_line
+### 90. open_script_at_line
 
 在 Godot 脚本编辑器中打开脚本文件并将光标移动到指定行和列。
 
@@ -2394,7 +2492,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 这些工具扩展了场景管理功能，支持场景结构查询、列出项目场景、列出和关闭场景标签页。需在工具管理面板中启用 `Scene-Advanced` 分组后使用。
 
-### 87. list_open_scenes
+### 91. list_open_scenes
 
 列出 Godot 编辑器中当前打开的场景标签页。
 
@@ -2411,7 +2509,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 ---
 
-### 88. close_scene_tab
+### 92. close_scene_tab
 
 关闭当前活动场景标签页，或关闭指定路径的场景标签页。
 
@@ -2435,7 +2533,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 这些工具扩展了编辑器操作功能，支持节点选择、编辑器设置、截图、信号查询、文件选择、属性检查、导出管理。需在工具管理面板中启用 `Editor-Advanced` 分组后使用。
 
-### 89. select_node
+### 93. select_node
 
 在当前编辑的场景中选择一个节点并在检查器中聚焦显示。
 
@@ -2457,7 +2555,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 ---
 
-### 90. select_file
+### 94. select_file
 
 在 Godot 文件系统停靠面板中选择一个项目文件。
 
@@ -2476,7 +2574,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 ---
 
-### 91. get_inspector_properties
+### 95. get_inspector_properties
 
 检查节点或资源并返回类似检查器的属性元数据和序列化值。
 
@@ -2501,7 +2599,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 ---
 
-### 92. list_export_presets
+### 96. list_export_presets
 
 从 `export_presets.cfg` 列出导出预设。
 
@@ -2518,7 +2616,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 ---
 
-### 93. inspect_export_templates
+### 97. inspect_export_templates
 
 检查本地已安装的 Godot 导出模板。
 
@@ -2537,7 +2635,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 ---
 
-### 94. validate_export_preset
+### 98. validate_export_preset
 
 根据 `export_presets.cfg` 和本地模板可用性验证导出预设。
 
@@ -2558,7 +2656,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 ---
 
-### 95. run_export
+### 99. run_export
 
 运行 Godot CLI 导出指定预设。
 
@@ -2583,7 +2681,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 ---
 
-### 96. manage_export_templates
+### 100. manage_export_templates
 
 管理本机已安装的 Godot 导出模板。`action="status"` 报告模板目录、当前编辑器版本、已安装版本列表，以及当前版本对应的官方下载 URL 与 `.tpz` 文件名；`action="install"` 将导出模板 `.tpz`/`.zip` 解压到模板目录；`action="remove"` 删除某个已安装版本目录。Godot 4.6+ 通用。
 
@@ -2612,7 +2710,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 ---
 
-### 97. configure_android_export
+### 101. configure_android_export
 
 在 `export_presets.cfg` 中配置某个 Android 导出预设的安卓专属选项（包名、应用名、版本号/名称、Gradle 构建、APK/AAB 格式、min/target SDK、目标架构、keystore 文件路径）。仅写入显式提供的字段；预设的 `platform` 必须为 `Android`。出于安全考虑不写入 keystore 密码——请通过 `GODOT_ANDROID_KEYSTORE_*` 环境变量设置。Godot 4.6+ 通用。
 
@@ -2645,7 +2743,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 ---
 
 
-### 98. get_unsaved_changes
+### 102. get_unsaved_changes
 
 列出编辑器缓冲区中有未保存改动的场景与脚本，便于在写盘前避免覆盖用户在编辑器里的工作。使用 Godot 4.7 API（`EditorInterface.get_unsaved_scenes` / `ScriptEditor.get_unsaved_files`）；旧版本对应的 `*_supported` 标志为 `false`。
 
@@ -2667,7 +2765,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 ---
 
-### 99. save_all_scripts
+### 103. save_all_scripts
 
 保存脚本编辑器中所有打开的脚本（Godot 4.7 `ScriptEditor.save_all_scripts`）。在不暴露该 API 的 Godot 版本上返回 `status="unsupported"`。
 
@@ -2684,7 +2782,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 ---
 
-### 100. reload_open_scripts
+### 104. reload_open_scripts
 
 从磁盘重新加载编辑器中打开的脚本缓冲区（Godot 4.7 `ScriptEditor.reload_scripts`）。在 MCP 服务器改写 `.gd/.cs` 文件后调用，避免编辑器随后用过期缓冲区覆盖这些改动。旧版本返回 `status="unsupported"`。
 
@@ -2701,7 +2799,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 ---
 
-### 101. close_script_tab
+### 105. close_script_tab
 
 关闭脚本编辑器中的标签页（Godot 4.7 `ScriptEditor.close_file`）。不传 `script_path` 时关闭当前聚焦的脚本；传 `script_path` 时先聚焦该脚本再关闭。旧版本返回 `status="unsupported"`。
 
@@ -2722,7 +2820,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 ---
 
-### 102. get_import_status
+### 106. get_import_status
 
 报告 `EditorFileSystem` 当前是否正在扫描或导入资源，便于在运行项目或测试前等待稳定状态。`importing` 字段使用 Godot 4.7 `EditorFileSystem.is_importing`；旧版本 `importing_supported=false` 且 `importing=null`。
 
@@ -2746,7 +2844,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 这些工具扩展了调试功能，包括调试器线程/变量操作、执行控制、运行时场景管理、动画/音频/着色器等运行时操作。需在工具管理面板中启用 `Debug-Advanced` 分组后使用。
 
-### 103. get_debug_threads
+### 107. get_debug_threads
 
 返回活动 Godot 调试会话中的 DAP 样式调试器线程。
 
@@ -2762,7 +2860,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 ---
 
-### 104. get_debug_state_events
+### 108. get_debug_state_events
 
 从 bridge 读取记录的调试器断点/恢复/停止状态转换记录。
 
@@ -2784,7 +2882,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 ---
 
-### 105. get_debug_output
+### 109. get_debug_output
 
 读取编辑器 bridge 捕获的分类运行时调试器输出。现在 `stderr` 类别包含运行时脚本错误（通过 EngineDebugger error 消息桥接）。
 
@@ -2807,7 +2905,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 ---
 
-### 106. get_debug_scopes
+### 110. get_debug_scopes
 
 将捕获的栈变量分组为 DAP 风格的 scope（局部/成员/全局/常量）。
 
@@ -2830,7 +2928,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 ---
 
-### 107. get_debug_variables
+### 111. get_debug_variables
 
 通过 DAP 风格 `variablesReference` 解析子变量，支持大型数组和字典的分页。
 
@@ -2853,7 +2951,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 ---
 
-### 108. expand_debug_variable
+### 112. expand_debug_variable
 
 通过 scope 和路径展开捕获的调试变量或评估表达式值，支持数组和字典分页。
 
@@ -2880,7 +2978,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 ---
 
-### 109. evaluate_debug_expression
+### 113. evaluate_debug_expression
 
 在暂停的脚本调试器上下文中为指定帧评估表达式。
 
@@ -2906,7 +3004,7 @@ Godot MCP Native 实现了 **179 个工具**，分为 6 大类（含核心和补
 
 ---
 
-### 110. debug_step_into
+### 114. debug_step_into
 
 Step Into：进入下一行语句。
 
@@ -2927,7 +3025,7 @@ Step Into：进入下一行语句。
 
 ---
 
-### 111. debug_step_over
+### 115. debug_step_over
 
 Step Over：跳过下一行语句。
 
@@ -2939,7 +3037,7 @@ Step Over：跳过下一行语句。
 
 ---
 
-### 112. debug_step_out
+### 116. debug_step_out
 
 Step Out：跳出当前函数帧。
 
@@ -2951,7 +3049,7 @@ Step Out：跳出当前函数帧。
 
 ---
 
-### 113. debug_continue
+### 117. debug_continue
 
 Continue：恢复执行。
 
@@ -2963,7 +3061,7 @@ Continue：恢复执行。
 
 ---
 
-### 114. debug_step_into_and_wait
+### 118. debug_step_into_and_wait
 
 发送 step-into 命令并等待调试器报告暂停状态。
 
@@ -2990,7 +3088,7 @@ Continue：恢复执行。
 
 ---
 
-### 115. debug_step_over_and_wait
+### 119. debug_step_over_and_wait
 
 发送 step-over 命令并等待调试器报告暂停状态。参数和返回值同 `debug_step_into_and_wait`。
 
@@ -2998,7 +3096,7 @@ Continue：恢复执行。
 
 ---
 
-### 116. debug_step_out_and_wait
+### 120. debug_step_out_and_wait
 
 发送 step-out 命令并等待调试器报告暂停状态。参数和返回值同 `debug_step_into_and_wait`。
 
@@ -3006,7 +3104,7 @@ Continue：恢复执行。
 
 ---
 
-### 117. debug_continue_and_wait
+### 121. debug_continue_and_wait
 
 发送 continue 命令并等待调试器报告运行状态。参数和返回值同 `debug_step_into_and_wait`。
 
@@ -3014,7 +3112,7 @@ Continue：恢复执行。
 
 ---
 
-### 118. await_debugger_state
+### 122. await_debugger_state
 
 使用最新的 bridge 快照检查调试器会话是否达到目标执行状态。客户端在 continue/step 操作后重复调用。
 
@@ -3041,7 +3139,7 @@ Continue：恢复执行。
 
 ---
 
-### 119. get_runtime_performance_snapshot
+### 123. get_runtime_performance_snapshot
 
 从运行中的游戏实例捕获运行时性能快照，包括帧时间、对象计数和内存使用。
 
@@ -3069,7 +3167,7 @@ Continue：恢复执行。
 
 ---
 
-### 120. get_runtime_memory_trend
+### 124. get_runtime_memory_trend
 
 从运行中的游戏捕获短时内存和对象计数趋势（多次采样）。
 
@@ -3096,7 +3194,7 @@ Continue：恢复执行。
 
 ---
 
-### 121. create_runtime_node
+### 125. create_runtime_node
 
 在运行中游戏的父节点下创建新节点。
 
@@ -3121,7 +3219,7 @@ Continue：恢复执行。
 
 ---
 
-### 122. delete_runtime_node
+### 126. delete_runtime_node
 
 删除运行中的游戏节点。运行时场景根节点和 MCPRuntimeProbe 节点受保护。
 
@@ -3142,7 +3240,7 @@ Continue：恢复执行。
 
 ---
 
-### 123. simulate_runtime_input_event
+### 127. simulate_runtime_input_event
 
 通过 `Input.parse_input_event()` 向运行中的游戏注入结构化 InputEvent。
 
@@ -3162,7 +3260,7 @@ Continue：恢复执行。
 
 ---
 
-### 124. simulate_runtime_input_action
+### 128. simulate_runtime_input_action
 
 通过 `Input.parse_input_event()` 向运行中的游戏注入 InputEventAction。
 
@@ -3188,7 +3286,7 @@ Continue：恢复执行。
 
 ---
 
-### 125. list_runtime_input_actions
+### 129. list_runtime_input_actions
 
 列出运行中的游戏可用的 InputMap 动作，包含序列化的输入事件。
 
@@ -3210,7 +3308,7 @@ Continue：恢复执行。
 
 ---
 
-### 126. upsert_runtime_input_action
+### 130. upsert_runtime_input_action
 
 在运行中的游戏创建或更新 InputMap 动作。支持替换现有事件。
 
@@ -3238,7 +3336,7 @@ Continue：恢复执行。
 
 ---
 
-### 127. remove_runtime_input_action
+### 131. remove_runtime_input_action
 
 从运行中的游戏移除 InputMap 动作。
 
@@ -3260,7 +3358,7 @@ Continue：恢复执行。
 
 ---
 
-### 128. list_runtime_animations
+### 132. list_runtime_animations
 
 列出运行时 AnimationPlayer 节点上的可用动画。
 
@@ -3282,7 +3380,7 @@ Continue：恢复执行。
 
 ---
 
-### 129. play_runtime_animation
+### 133. play_runtime_animation
 
 播放运行时 AnimationPlayer 节点上的动画。
 
@@ -3312,7 +3410,7 @@ Continue：恢复执行。
 
 ---
 
-### 130. stop_runtime_animation
+### 134. stop_runtime_animation
 
 停止运行时 AnimationPlayer 节点的播放。
 
@@ -3336,7 +3434,7 @@ Continue：恢复执行。
 
 ---
 
-### 131. get_runtime_animation_state
+### 135. get_runtime_animation_state
 
 返回运行时 AnimationPlayer 节点的当前播放状态。
 
@@ -3353,7 +3451,7 @@ Continue：恢复执行。
 
 ---
 
-### 132. get_runtime_animation_tree_state
+### 136. get_runtime_animation_tree_state
 
 返回运行时 AnimationTree 节点的当前状态。
 
@@ -3378,7 +3476,7 @@ Continue：恢复执行。
 
 ---
 
-### 133. set_runtime_animation_tree_active
+### 137. set_runtime_animation_tree_active
 
 启用或禁用运行时 AnimationTree 节点。
 
@@ -3401,7 +3499,7 @@ Continue：恢复执行。
 
 ---
 
-### 134. travel_runtime_animation_tree
+### 138. travel_runtime_animation_tree
 
 将运行时 AnimationTree 状态机播放转移到目标节点。
 
@@ -3424,7 +3522,7 @@ Continue：恢复执行。
 
 ---
 
-### 135. get_runtime_material_state
+### 139. get_runtime_material_state
 
 解析运行时节点的材质绑定并返回材质元数据。
 
@@ -3449,7 +3547,7 @@ Continue：恢复执行。
 
 ---
 
-### 136. get_runtime_theme_item
+### 140. get_runtime_theme_item
 
 解析一个运行时 Control 主题项并报告其当前值和覆盖状态。
 
@@ -3477,7 +3575,7 @@ Continue：恢复执行。
 
 ---
 
-### 137. set_runtime_theme_override
+### 141. set_runtime_theme_override
 
 应用一个运行时 Control 主题覆盖（color/constant/font/font_size/stylebox/icon）。
 
@@ -3505,7 +3603,7 @@ Continue：恢复执行。
 
 ---
 
-### 138. clear_runtime_theme_override
+### 142. clear_runtime_theme_override
 
 移除一个运行时 Control 主题覆盖并返回清除后的值。
 
@@ -3532,7 +3630,7 @@ Continue：恢复执行。
 
 ---
 
-### 139. get_runtime_shader_parameters
+### 143. get_runtime_shader_parameters
 
 列出运行时 ShaderMaterial 绑定的着色器 uniform 和当前值。
 
@@ -3556,7 +3654,7 @@ Continue：恢复执行。
 
 ---
 
-### 140. set_runtime_shader_parameter
+### 144. set_runtime_shader_parameter
 
 更新运行时 ShaderMaterial 绑定的一个着色器 uniform。
 
@@ -3583,7 +3681,7 @@ Continue：恢复执行。
 
 ---
 
-### 141. list_runtime_tilemap_layers
+### 145. list_runtime_tilemap_layers
 
 列出运行时 TileMap 节点的层和使用中的 tile 计数。
 
@@ -3605,7 +3703,7 @@ Continue：恢复执行。
 
 ---
 
-### 142. get_runtime_tilemap_cell
+### 146. get_runtime_tilemap_cell
 
 返回指定 TileMap 层坐标处的运行时单元格数据。
 
@@ -3634,7 +3732,7 @@ Continue：恢复执行。
 
 ---
 
-### 143. set_runtime_tilemap_cell
+### 147. set_runtime_tilemap_cell
 
 写入或擦除指定 TileMap 层坐标处的运行时单元格。
 
@@ -3666,7 +3764,7 @@ Continue：恢复执行。
 
 ---
 
-### 144. list_runtime_audio_buses
+### 148. list_runtime_audio_buses
 
 列出运行中的游戏可用的 AudioServer 总线。
 
@@ -3686,7 +3784,7 @@ Continue：恢复执行。
 
 ---
 
-### 145. get_runtime_audio_bus
+### 149. get_runtime_audio_bus
 
 返回运行中的游戏内一个 AudioServer 总线的当前状态。
 
@@ -3713,7 +3811,7 @@ Continue：恢复执行。
 
 ---
 
-### 146. update_runtime_audio_bus
+### 150. update_runtime_audio_bus
 
 更新运行中的游戏内一个 AudioServer 总线的 mute 和/或 volume_db。
 
@@ -3742,7 +3840,7 @@ Continue：恢复执行。
 
 ---
 
-### 147. get_runtime_screenshot
+### 151. get_runtime_screenshot
 
 从运行中的游戏捕获当前运行时视口（或指定 Viewport/SubViewport）截图并保存到文件。
 
@@ -3774,7 +3872,7 @@ Continue：恢复执行。
 
 这些工具扩展了项目配置管理功能，包括资源创建、项目结构查询、测试运行、输入映射管理、自动加载/全局类查询、资源诊断。需在工具管理面板中启用 `Project-Advanced` 分组后使用。
 
-### 148. list_project_tests
+### 152. list_project_tests
 
 发现 Godot 项目测试目录下的可运行测试。报告 Python 集成测试和 GUT 单元测试，包括每个测试当前是否可运行。
 
@@ -3795,7 +3893,7 @@ Continue：恢复执行。
 
 ---
 
-### 149. run_project_test
+### 153. run_project_test
 
 运行单个项目测试脚本，**不阻塞编辑器**。Python 集成测试使用 python 执行，GUT 单元测试通过 Godot headless 执行。
 
@@ -3822,7 +3920,7 @@ Continue：恢复执行。
 
 ---
 
-### 150. run_project_tests
+### 154. run_project_tests
 
 从目录中发现并运行多个项目测试，聚合通过/失败计数，**不阻塞编辑器**。
 
@@ -3852,7 +3950,7 @@ Continue：恢复执行。
 
 ---
 
-### 151. list_project_input_actions
+### 155. list_project_input_actions
 
 列出 ProjectSettings 中存储的项目 InputMap 动作，包含序列化的输入事件。
 
@@ -3872,7 +3970,7 @@ Continue：恢复执行。
 
 ---
 
-### 152. upsert_project_input_action
+### 156. upsert_project_input_action
 
 在 ProjectSettings 中创建或更新项目 InputMap 动作并保存 `project.godot`。
 
@@ -3898,7 +3996,7 @@ Continue：恢复执行。
 
 ---
 
-### 153. remove_project_input_action
+### 157. remove_project_input_action
 
 从 ProjectSettings 中移除项目 InputMap 动作并保存 `project.godot`。
 
@@ -3918,7 +4016,7 @@ Continue：恢复执行。
 
 ---
 
-### 154. list_project_autoloads
+### 158. list_project_autoloads
 
 列出项目自动加载条目，包含解析后的路径、单例标志和项目设置顺序。
 
@@ -3937,7 +4035,7 @@ Continue：恢复执行。
 
 ---
 
-### 155. list_project_global_classes
+### 159. list_project_global_classes
 
 列出通过 `class_name` 元数据注册的项目全局脚本类。
 
@@ -3956,7 +4054,7 @@ Continue：恢复执行。
 
 ---
 
-### 156. get_class_api_metadata
+### 160. get_class_api_metadata
 
 获取引擎 ClassDB 类或项目全局脚本类的类型化 API 元数据。
 
@@ -3982,7 +4080,7 @@ Continue：恢复执行。
 
 ---
 
-### 157. inspect_csharp_project_support
+### 161. inspect_csharp_project_support
 
 检查 C# / Mono 项目支持文件（.csproj 和 .sln），包括目标框架、程序集元数据和引用。
 
@@ -4004,7 +4102,7 @@ Continue：恢复执行。
 
 ---
 
-### 158. compare_render_screenshots
+### 162. compare_render_screenshots
 
 比较两张截图图像并报告像素差异、RMSE 和基于阈值的匹配状态。
 
@@ -4032,7 +4130,7 @@ Continue：恢复执行。
 
 ---
 
-### 159. inspect_tileset_resource
+### 163. inspect_tileset_resource
 
 检查 TileSet 资源并汇总其源、图集 tile 和场景 tile。
 
@@ -4054,7 +4152,7 @@ Continue：恢复执行。
 
 ---
 
-### 160. reimport_resources
+### 164. reimport_resources
 
 使用 Godot 的 `EditorFileSystem` 导入管线重新导入项目资源。
 
@@ -4077,7 +4175,7 @@ Continue：恢复执行。
 
 ---
 
-### 161. get_import_metadata
+### 165. get_import_metadata
 
 读取源资产的 Godot 导入元数据，包括导入器设置和导入后的产物路径。
 
@@ -4102,7 +4200,7 @@ Continue：恢复执行。
 
 ---
 
-### 162. get_resource_uid_info
+### 166. get_resource_uid_info
 
 检查 Godot ResourceUID 映射，用于资源路径或 `uid://` 标识符。
 
@@ -4127,7 +4225,7 @@ Continue：恢复执行。
 
 ---
 
-### 163. fix_resource_uid
+### 167. fix_resource_uid
 
 确保资源文件有持久的 UID 并刷新编辑器文件系统映射。
 
@@ -4149,7 +4247,7 @@ Continue：恢复执行。
 
 ---
 
-### 164. get_resource_dependencies
+### 168. get_resource_dependencies
 
 使用 Godot 的 `ResourceLoader` 依赖元数据列出解析后的资源依赖。
 
@@ -4169,7 +4267,7 @@ Continue：恢复执行。
 
 ---
 
-### 165. scan_missing_resource_dependencies
+### 169. scan_missing_resource_dependencies
 
 扫描项目资源中的破损或缺失依赖引用。
 
@@ -4191,7 +4289,7 @@ Continue：恢复执行。
 
 ---
 
-### 166. scan_cyclic_resource_dependencies
+### 170. scan_cyclic_resource_dependencies
 
 基于解析的 `ResourceLoader` 依赖元数据扫描项目资源的循环依赖链。
 
@@ -4214,7 +4312,7 @@ Continue：恢复执行。
 
 ---
 
-### 167. detect_broken_scripts
+### 171. detect_broken_scripts
 
 扫描 GDScript 文件的语法错误和轻量级警告。
 
@@ -4238,7 +4336,7 @@ Continue：恢复执行。
 
 ---
 
-### 168. audit_project_health
+### 172. audit_project_health
 
 运行轻量级项目健康审计，覆盖破损脚本和缺失资源依赖。
 
@@ -4263,7 +4361,7 @@ Continue：恢复执行。
 
 ---
 
-### 169. find_resource_usages
+### 173. find_resource_usages
 
 反向依赖查询：查找项目中哪些资源引用了目标资源。按路径和 UID 两种方式匹配。
 
@@ -4290,7 +4388,7 @@ Continue：恢复执行。
 
 ---
 
-### 170. list_unused_resources
+### 174. list_unused_resources
 
 列出没有被任何其他资源引用的孤立资源。仅通过 `class_name` 引用的脚本不被跟踪；入口点（主场景、自动加载）始终视为已使用。
 
@@ -4315,7 +4413,7 @@ Continue：恢复执行。
 
 ---
 
-### 171. scan_migration_compatibility
+### 175. scan_migration_compatibility
 
 扫描项目源码（`.gd`/`.cs`）中使用了目标 Godot 版本破坏性变更 API 的位置，并按文件/行号、严重度和修复建议汇总迁移问题。规则表源自官方《Upgrading to Godot 4.7》迁移指南。
 
@@ -4343,7 +4441,7 @@ Continue：恢复执行。
 
 ---
 
-### 172. apply_migration_fixes
+### 176. apply_migration_fixes
 
 为目标 Godot 版本应用安全的、机械式的迁移改写（如枚举/标识符重命名）。默认 `dry_run=true`，仅预览 diff 而不写盘；行为类变更不会被自动改写，只能由 `scan_migration_compatibility` 报告后手动处理。
 
@@ -4373,7 +4471,7 @@ Continue：恢复执行。
 
 ---
 
-### 173. find_deprecated_api_usage
+### 177. find_deprecated_api_usage
 
 扫描项目脚本（`.gd`/`.cs`）中对已移除/弃用 Godot 4.x API 的使用（如 `Pool*Array`、`yield`、`setget`、`.empty()`、`.instance()`、`VisualServer`），按 `file:line` 报告并给出现代替代写法。类/属性类规则会用运行中引擎的 ClassDB 交叉验证（`present_in_engine`/`replacement_available`）。注释行被跳过。
 
@@ -4399,7 +4497,7 @@ Continue：恢复执行。
 
 ---
 
-### 174. detect_gdextension_addons
+### 178. detect_gdextension_addons
 
 扫描 `.gdextension` 文件以检测原生 GDExtension 插件，报告其 `entry_symbol`、`compatibility_minimum` 与各平台库路径（逐个检查 `.so`/`.dll`/`.dylib` 是否就绪），并转出任何 `SConstruct` 构建文件及建议的 scons 命令。仅检测，不编译任何内容。
 
@@ -4422,7 +4520,7 @@ Continue：恢复执行。
 
 ---
 
-### 175. create_gradient_texture
+### 179. create_gradient_texture
 
 创建并保存一个 `GradientTexture2D`（`.tres`），支持可配置的颜色渐变与填充模式（linear、radial、square、conic）。**conic（锥形）填充模式需要 Godot 4.7**；在旧版本上请求 conic 会返回 `status="unsupported"`。
 
@@ -4456,7 +4554,7 @@ Continue：恢复执行。
 
 ---
 
-### 176. pack_pck
+### 180. pack_pck
 
 使用 `PCKPacker` 将一组文件打包为 Godot `.pck` 归档。每个条目把虚拟 `target_path`（`res://...`）映射到磁盘上已存在的 `source_path`。适合构建可用 `ProjectSettings.load_resource_pack` 加载的 DLC/模组包。
 
@@ -4485,7 +4583,7 @@ Continue：恢复执行。
 
 ---
 
-### 177. configure_render_output
+### 181. configure_render_output
 
 配置项目级渲染输出设置，包括 **Godot 4.7 HDR 2D 输出**（`rendering/viewport/hdr_2d`）与透明背景（`rendering/viewport/transparent_background`）。仅修改传入的设置；每项都用 `ProjectSettings.has_setting` 守卫——不可用的键会被报告为 `unsupported` 而非被创建。
 
@@ -4513,7 +4611,7 @@ Continue：恢复执行。
 
 ---
 
-### 178. create_drawable_texture
+### 182. create_drawable_texture
 
 创建并保存一个 **Godot 4.7 `DrawableTexture2D`**（`.tres`/`.res`）——一种可在运行时绘制的 GPU 纹理。通过 `setup(width, height, format, fill_color, use_mipmaps)` 初始化。`DrawableTexture2D` 需要 Godot 4.7；旧版本返回 `status="unsupported"`（通过 `ClassDB.class_exists("DrawableTexture2D")` 守卫）。
 
@@ -4546,7 +4644,7 @@ Continue：恢复执行。
 
 ---
 
-### 179. draw_on_texture
+### 183. draw_on_texture
 
 在已有的 **Godot 4.7 `DrawableTexture2D`** 上绘制：将源纹理（`Texture2D`）通过 `blit_rect` 逐个绘制到目标矩形上。每个操作把一个源贴到目标矩形，并可附加 `modulate` 调制色。`DrawableTexture2D` 需要 Godot 4.7；旧版本返回 `status="unsupported"`。
 
@@ -4675,7 +4773,7 @@ Continue：恢复执行。
 
 ## 总结
 
-本手册详细说明了 Godot MCP Native 项目的所有核心工具及部分补充工具。项目共 **179 个工具**（30 核心 + 149 补充），所有工具均可通过 MCP 工具管理面板按分组动态启用/禁用。补充工具（`*-Advanced` 分组）默认不启用，需在工具管理面板中手动开启。
+本手册详细说明了 Godot MCP Native 项目的所有核心工具及部分补充工具。项目共 **183 个工具**（30 核心 + 153 补充），所有工具均可通过 MCP 工具管理面板按分组动态启用/禁用。补充工具（`*-Advanced` 分组）默认不启用，需在工具管理面板中手动开启。
 
 **提示**：
 - 使用 `tools/list` 方法获取所有工具的实时列表和完整 JSON Schema
