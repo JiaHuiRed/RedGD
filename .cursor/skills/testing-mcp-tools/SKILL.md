@@ -26,6 +26,35 @@ description: "在 Godot 编辑器中通过 HTTP 端到端实测 MCP 工具（尤
 - **FileSystem 不会自动发现新文件**：MCP 工具在编辑器进程内写文件后，FileSystem dock 不立即刷新。**切换窗口焦点离开再回到 Godot** 会触发重扫描（点任务栏其它窗口→点回 Godot 标题栏），新文件夹就出现了。
 - `res://` = 项目根 = `/home/ubuntu/repos/GodotMcp-XY`。
 
+## 省算力无头自启路径（推荐，免 GUI 点击）
+
+不想手动开服务/勾工具时，可在启动时一步到位：
+
+1. **预置启用态**：往 `user://mcp_tool_state.cfg` 写要测的补充工具（核心工具默认已启用，无需写入；cfg 里未列的工具保持注册默认）。用户数据目录用 `OS.get_user_data_dir()` 求得，本项目为 `~/.local/share/godot/app_userdata/Godot MCP Native/`：
+   ```
+   [meta]
+   version=1
+
+   [tools]
+   <tool_a>=true
+   <tool_b>=true
+   ```
+   md5 校验为可选（`config_manager.gd`），可省略。
+2. **带 `--mcp-server` 启动**会自动开服务并加载工具状态（`mcp_server_native.gd:212-216` 自启、`:204-205` 加载 cfg）：
+   ```
+   DISPLAY=:0 nohup /home/ubuntu/godot-bin/godot --editor --path . -- --mcp-server > /tmp/godot_editor.log 2>&1 &
+   ```
+   注意 `--` 之后才是传给插件的参数。启动 + 导入约 1 分钟，之后 `tools/list` 即含已启用的补充工具。
+3. 直接 curl 测，`tools/list` 数量应为 `30 + 已启用补充数`。
+
+## 场景上下文工具的测试（edited scene 而非新建场景）
+
+需要在编辑场景里操作节点的工具（如 `set_node_subresource` / `set_tilemap_layer_cells` / `create_node`）走的是 `EditorInterface.get_edited_scene_root()`：
+
+- **`create_scene` 的参数是 `scene_path`（不是 `path`）**；它只把 `.tscn` 写到磁盘，**不会**把新场景切成当前编辑场景（Vibe Coding 模式下切场景需要 UI 焦点，HTTP 默认不给）。所以紧接着对 `/root/<新根>` 调 `create_node` 会报 `Parent node not found`。
+- 正确做法：先用 `get_scene_tree` 查出**当前真实编辑场景**的根路径（如 `/root/Node3D`），把测试节点建在它下面，全程**不要 `save_scene`** —— 改动只在内存里，杀掉编辑器即丢弃，不污染项目。
+- 这类工具的"成功路径"无法在 headless 下端到端测（需运行中的 EditorInterface）；GUT 单测覆盖校验/错误分支即可。
+
 ## 调用模板
 
 ```bash
