@@ -15,6 +15,10 @@ compare_render_screenshots,,Compare two screenshot images and report pixel diffe
 inspect_tileset_resource,,Inspect a TileSet resource and summarize its sources, atlas tiles, and scene tiles.,检查 TileSet 资源并汇总其来源、图集瓦片和场景瓦片。
 list_project_resources,,List all resource files in the project (.tres, .res, .png, .ogg, etc.).,列出项目中的所有资源文件（.tres、.res、.png、.ogg 等）。
 create_resource,,Create a new Godot resource file (.tres). Supports common resource types.,创建新的 Godot 资源文件（.tres）。支持常见的资源类型。
+create_custom_resource,,"Create a .tres/.res for a custom class_name Resource (or Resource script by path), setting exported properties. Resolves project global classes, not just built-in engine types.",为自定义 class_name 资源（或按路径指定的 Resource 脚本）创建 .tres/.res 文件并设置导出属性。可解析项目全局类，而不仅限于引擎内置类型。
+batch_create_resources,,"Create many resource files (.tres) in one call from a list spec, with shared defaults each item can override. Ideal for data-driven card, relic, or enemy sets.",通过列表规格一次性创建多个资源文件（.tres），共享默认值可被每个条目覆盖。适合数据驱动的卡牌、遗物或敌人集合。
+update_resource_properties,,"Load an existing resource file, set/merge exported properties, and re-save it. Use to tweak data such as card cost or enemy HP.",加载已有资源文件，设置/合并导出属性后重新保存。可用于调整卡牌费用或敌人血量等数据。
+read_resource_properties,,"Read a resource file and return its exported properties as JSON-friendly values, optionally including built-in base Resource properties.",读取资源文件并以 JSON 友好的形式返回其导出属性，可选地包含内置的基础 Resource 属性。
 get_project_structure,,Get project structure and file organization.,获取项目结构和文件组织。
 reimport_resources,,Reimport project resources.,重新导入项目资源。
 get_import_metadata,,Get resource import metadata.,获取资源导入元数据。
