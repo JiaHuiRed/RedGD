@@ -96,6 +96,7 @@ var _admission_waiter_seq: int = 0
 var _tools: Dictionary = {}  # String -> MCPTool
 var _resources: Dictionary = {}  # String -> MCPResource
 var _prompts: Dictionary = {}  # String -> MCPPrompt
+var _resource_subscriptions: Dictionary = {}  # String (uri) -> true; active resource subscriptions
 var _tool_list_dirty: bool = false  # 工具列表变更标记
 
 var _classifier = null  # MCPToolClassifier (lazy-loaded for GUT CLI compat)
@@ -413,6 +414,9 @@ func _handle_request(message: Dictionary) -> Dictionary:
 		MCPTypes.METHOD_RESOURCES_SUBSCRIBE:
 			return _handle_resource_subscribe(message)
 		
+		MCPTypes.METHOD_RESOURCES_UNSUBSCRIBE:
+			return _handle_resource_unsubscribe(message)
+		
 		MCPTypes.METHOD_PROMPTS_LIST:
 			return _handle_prompts_list(message)
 		
@@ -675,13 +679,59 @@ func _handle_resource_subscribe(message: Dictionary) -> Dictionary:
 	var params: Dictionary = message.get("params", {})
 	var uri: String = params.get("uri", "")
 	
-	_log_info("Resource subscribe: " + uri)
+	if uri.is_empty():
+		return MCPTypes.create_error_response(id, MCPTypes.ERROR_INVALID_PARAMS, "Missing required parameter: uri")
 	
-	# TODO: 实现资源订阅逻辑
-	var result: Dictionary = {"subscriptionId": MCPTypes.generate_id()}
-	var response: Dictionary = MCPTypes.create_response(id, result)
+	if not _resources.has(uri):
+		_log_warn("Subscribe to unknown resource: " + uri)
+		return MCPTypes.create_error_response(id, MCPTypes.ERROR_RESOURCE_NOT_FOUND, "Resource not found: " + uri)
 	
-	return response
+	_resource_subscriptions[uri] = true
+	_log_info("Resource subscribed: " + uri)
+	
+	# MCP spec: resources/subscribe returns an empty result on success.
+	return MCPTypes.create_response(id, {})
+
+func _handle_resource_unsubscribe(message: Dictionary) -> Dictionary:
+	var id: Variant = message.get("id")
+	var params: Dictionary = message.get("params", {})
+	var uri: String = params.get("uri", "")
+	
+	if uri.is_empty():
+		return MCPTypes.create_error_response(id, MCPTypes.ERROR_INVALID_PARAMS, "Missing required parameter: uri")
+	
+	if _resource_subscriptions.has(uri):
+		_resource_subscriptions.erase(uri)
+		_log_info("Resource unsubscribed: " + uri)
+	
+	# MCP spec: resources/unsubscribe returns an empty result on success.
+	return MCPTypes.create_response(id, {})
+
+## Whether a client currently holds a subscription to the given resource uri.
+func is_resource_subscribed(uri: String) -> bool:
+	return _resource_subscriptions.has(uri)
+
+## List of resource uris that currently have an active subscription.
+func get_resource_subscriptions() -> Array:
+	return _resource_subscriptions.keys()
+
+## Notify subscribed clients that a resource changed.
+## Sends a `notifications/resources/updated` message for the uri if it has an
+## active subscription and a transport is connected. Returns true if a
+## notification was sent.
+func notify_resource_updated(uri: String) -> bool:
+	if not _resource_subscriptions.has(uri):
+		return false
+	var notification: Dictionary = {
+		"jsonrpc": "2.0",
+		"method": MCPTypes.NOTIFICATION_RESOURCES_UPDATED,
+		"params": {"uri": uri}
+	}
+	if _transport and _transport.has_method("send_raw_message"):
+		_transport.send_raw_message(notification)
+		_log_debug("Sent resources/updated notification: " + uri)
+		return true
+	return false
 
 func _handle_prompts_list(message: Dictionary) -> Dictionary:
 	var id: Variant = message.get("id")
@@ -704,18 +754,38 @@ func _handle_prompt_get(message: Dictionary) -> Dictionary:
 	var id: Variant = message.get("id")
 	var params: Dictionary = message.get("params", {})
 	var prompt_name: String = params.get("name", "")
+	var arguments: Dictionary = params.get("arguments", {})
 	
 	_log_info("Prompt get: " + prompt_name)
 	
-	# TODO: 实现prompt获取逻辑
-	var result: Dictionary = {
-		"description": "Prompt: " + prompt_name,
-		"messages": []
-	}
+	if prompt_name.is_empty():
+		return MCPTypes.create_error_response(id, MCPTypes.ERROR_INVALID_PARAMS, "Missing required parameter: name")
 	
-	var response: Dictionary = MCPTypes.create_response(id, result)
+	if not _prompts.has(prompt_name):
+		return MCPTypes.create_error_response(id, MCPTypes.ERROR_INVALID_PARAMS, "Prompt not found: " + prompt_name)
 	
-	return response
+	var prompt: MCPTypes.MCPPrompt = _prompts[prompt_name]
+	
+	# Validate required arguments declared by the prompt are present.
+	for arg in prompt.arguments:
+		if arg.get("required", false) and not arguments.has(arg.get("name", "")):
+			return MCPTypes.create_error_response(id, MCPTypes.ERROR_INVALID_PARAMS, "Missing required prompt argument: " + str(arg.get("name", "")))
+	
+	var result: Dictionary = {}
+	if prompt.get_callable.is_valid():
+		var produced: Variant = prompt.get_callable.call(arguments)
+		if typeof(produced) != TYPE_DICTIONARY:
+			_log_error("Prompt callable returned non-Dictionary for: " + prompt_name)
+			return MCPTypes.create_error_response(id, MCPTypes.ERROR_INTERNAL_ERROR, "Prompt generation failed: " + prompt_name)
+		result = produced
+	
+	# Normalize the result shape to {description, messages}.
+	if not result.has("description"):
+		result["description"] = prompt.description
+	if not result.has("messages"):
+		result["messages"] = []
+	
+	return MCPTypes.create_response(id, result)
 
 # ============================================================================
 # 工具注册API（优化版 - 根据mcp-builder）
@@ -882,6 +952,7 @@ func register_resource(uri: String, name: String,
 func unregister_resource(uri: String) -> void:
 	if _resources.has(uri):
 		_resources.erase(uri)
+		_resource_subscriptions.erase(uri)
 		_log_info("Resource unregistered: " + uri)
 
 func get_resource(uri: String) -> MCPTypes.MCPResource:
@@ -901,6 +972,7 @@ func register_prompt(name: String, description: String,
 	prompt.name = name
 	prompt.description = description
 	prompt.arguments = arguments
+	prompt.get_callable = get_callable
 	
 	_prompts[name] = prompt
 	_log_info("Prompt registered: " + name)
