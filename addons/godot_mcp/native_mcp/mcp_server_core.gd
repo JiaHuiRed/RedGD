@@ -371,6 +371,9 @@ func stop() -> void:
 	# Waiting admission coroutines observe _active == false and exit on their next frame;
 	# clear the line so a restarted server starts with no stale waiters.
 	_admission_waiters.clear()
+	# Resource subscriptions are per-session; drop them so a restarted server does
+	# not emit resources/updated for resources the new client never subscribed to.
+	_resource_subscriptions.clear()
 
 	_log_info("MCP Server stopped")
 
@@ -421,7 +424,7 @@ func _handle_request(message: Dictionary) -> Dictionary:
 			return _handle_prompts_list(message)
 		
 		MCPTypes.METHOD_PROMPTS_GET:
-			return _handle_prompt_get(message)
+			return await _handle_prompt_get(message)
 		
 		_:
 			_log_warn("Method not found: " + method)
@@ -773,7 +776,9 @@ func _handle_prompt_get(message: Dictionary) -> Dictionary:
 	
 	var result: Dictionary = {}
 	if prompt.get_callable.is_valid():
-		var produced: Variant = prompt.get_callable.call(arguments)
+		# await mirrors _handle_resource_read so prompt callables may be async;
+		# awaiting a synchronous return value resolves immediately.
+		var produced: Variant = await prompt.get_callable.call(arguments)
 		if typeof(produced) != TYPE_DICTIONARY:
 			_log_error("Prompt callable returned non-Dictionary for: " + prompt_name)
 			return MCPTypes.create_error_response(id, MCPTypes.ERROR_INTERNAL_ERROR, "Prompt generation failed: " + prompt_name)

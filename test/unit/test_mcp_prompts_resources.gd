@@ -28,19 +28,19 @@ func _register_dummy_resource(uri: String) -> void:
 # ---------------------------------------------------------------------------
 
 func test_prompt_get_missing_name_returns_error():
-	var resp: Dictionary = _core._handle_prompt_get({"id": 1, "params": {}})
+	var resp: Dictionary = await _core._handle_prompt_get({"id": 1, "params": {}})
 	assert_true(resp.has("error"), "Empty name should error")
 	assert_eq(resp["error"]["code"], MCPTypes.ERROR_INVALID_PARAMS, "Should be invalid params")
 
 func test_prompt_get_unknown_returns_error():
-	var resp: Dictionary = _core._handle_prompt_get({"id": 1, "params": {"name": "does_not_exist"}})
+	var resp: Dictionary = await _core._handle_prompt_get({"id": 1, "params": {"name": "does_not_exist"}})
 	assert_true(resp.has("error"), "Unknown prompt should error")
 	assert_eq(resp["error"]["code"], MCPTypes.ERROR_INVALID_PARAMS, "Should be invalid params")
 
 func test_prompt_get_returns_callable_content():
 	var no_args: Array[Dictionary] = []
 	_core.register_prompt("greet", "Greet prompt", no_args, func(_args): return {"messages": [{"role": "user", "content": {"type": "text", "text": "hi"}}]})
-	var resp: Dictionary = _core._handle_prompt_get({"id": 1, "params": {"name": "greet"}})
+	var resp: Dictionary = await _core._handle_prompt_get({"id": 1, "params": {"name": "greet"}})
 	assert_true(resp.has("result"), "Should return a result")
 	assert_eq(resp["result"]["messages"].size(), 1, "Should pass through callable messages")
 	assert_eq(resp["result"]["description"], "Greet prompt", "Should default description to prompt description")
@@ -48,21 +48,21 @@ func test_prompt_get_returns_callable_content():
 func test_prompt_get_missing_required_argument_errors():
 	var args: Array[Dictionary] = [{"name": "topic", "description": "t", "required": true}]
 	_core.register_prompt("topical", "Topical", args, func(_a): return {"messages": []})
-	var resp: Dictionary = _core._handle_prompt_get({"id": 1, "params": {"name": "topical", "arguments": {}}})
+	var resp: Dictionary = await _core._handle_prompt_get({"id": 1, "params": {"name": "topical", "arguments": {}}})
 	assert_true(resp.has("error"), "Missing required argument should error")
 	assert_eq(resp["error"]["code"], MCPTypes.ERROR_INVALID_PARAMS, "Should be invalid params")
 
 func test_prompt_get_with_required_argument_present():
 	var args: Array[Dictionary] = [{"name": "topic", "required": true}]
 	_core.register_prompt("topical", "Topical", args, func(a): return {"messages": [{"role": "user", "content": {"type": "text", "text": a.get("topic", "")}}]})
-	var resp: Dictionary = _core._handle_prompt_get({"id": 1, "params": {"name": "topical", "arguments": {"topic": "dogs"}}})
+	var resp: Dictionary = await _core._handle_prompt_get({"id": 1, "params": {"name": "topical", "arguments": {"topic": "dogs"}}})
 	assert_true(resp.has("result"), "Should return a result")
 	assert_eq(resp["result"]["messages"][0]["content"]["text"], "dogs", "Argument should reach the callable")
 
 func test_prompt_get_without_callable_falls_back_to_description():
 	var no_args: Array[Dictionary] = []
 	_core.register_prompt("plain", "Plain description", no_args, Callable())
-	var resp: Dictionary = _core._handle_prompt_get({"id": 1, "params": {"name": "plain"}})
+	var resp: Dictionary = await _core._handle_prompt_get({"id": 1, "params": {"name": "plain"}})
 	assert_true(resp.has("result"), "Should return a result")
 	assert_eq(resp["result"]["messages"], [], "Should default to empty messages")
 	assert_eq(resp["result"]["description"], "Plain description", "Should use prompt description")
@@ -70,9 +70,18 @@ func test_prompt_get_without_callable_falls_back_to_description():
 func test_prompt_get_callable_non_dictionary_errors():
 	var no_args: Array[Dictionary] = []
 	_core.register_prompt("bad", "Bad", no_args, func(_a): return "not a dict")
-	var resp: Dictionary = _core._handle_prompt_get({"id": 1, "params": {"name": "bad"}})
+	var resp: Dictionary = await _core._handle_prompt_get({"id": 1, "params": {"name": "bad"}})
 	assert_true(resp.has("error"), "Non-dictionary callable result should error")
 	assert_eq(resp["error"]["code"], MCPTypes.ERROR_INTERNAL_ERROR, "Should be internal error")
+
+func test_prompt_get_awaits_async_callable():
+	var no_args: Array[Dictionary] = []
+	_core.register_prompt("async_prompt", "Async", no_args, func(_a):
+		await get_tree().process_frame
+		return {"messages": [{"role": "user", "content": {"type": "text", "text": "async-ok"}}]})
+	var resp: Dictionary = await _core._handle_prompt_get({"id": 1, "params": {"name": "async_prompt"}})
+	assert_true(resp.has("result"), "Async callable should resolve to a result")
+	assert_eq(resp["result"]["messages"][0]["content"]["text"], "async-ok", "Async message should pass through")
 
 # ---------------------------------------------------------------------------
 # resources/subscribe + unsubscribe
@@ -106,6 +115,14 @@ func test_unregister_resource_drops_subscription():
 	_core._handle_resource_subscribe({"id": 1, "params": {"uri": "godot://dummy"}})
 	_core.unregister_resource("godot://dummy")
 	assert_false(_core.is_resource_subscribed("godot://dummy"), "Unregistering should drop subscription")
+
+func test_stop_clears_subscriptions():
+	_register_dummy_resource("godot://dummy")
+	_core._handle_resource_subscribe({"id": 1, "params": {"uri": "godot://dummy"}})
+	# stop() returns early unless the server is active; simulate a running server.
+	_core._active = true
+	_core.stop()
+	assert_false(_core.is_resource_subscribed("godot://dummy"), "stop() should clear per-session subscriptions")
 
 # ---------------------------------------------------------------------------
 # notifications/resources/updated
