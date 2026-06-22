@@ -3,6 +3,7 @@ extends "res://addons/gut/test.gd"
 # Tests for the card-based Settings tab layout (mcp_panel_native.gd).
 
 const PanelScript = preload("res://addons/godot_mcp/ui/mcp_panel_native.gd")
+const ProviderScript = preload("res://addons/godot_mcp/native_mcp/mcp_cloudflared_provider.gd")
 
 func _make_panel() -> Node:
 	var panel: Node = PanelScript.new()
@@ -29,6 +30,13 @@ func test_settings_registers_section_titles() -> void:
 	var panel: Node = _make_panel()
 	autofree(panel._create_settings_tab())
 	assert_eq(panel._section_titles.size(), 5, "Relabelable section titles registered for refresh")
+
+func test_manual_path_field_visibility_matches_platform_support() -> void:
+	var panel: Node = _make_panel()
+	autofree(panel._create_settings_tab())
+	assert_not_null(panel._tunnel_binary_edit, "Manual cloudflared path field still exists")
+	var supported: bool = not ProviderScript.detect_platform_key().is_empty()
+	assert_eq(panel._tunnel_binary_row.visible, not supported, "Manual path row visible only when no prebuilt binary exists")
 
 func test_settings_exposes_log_actions() -> void:
 	var panel: Node = _make_panel()
