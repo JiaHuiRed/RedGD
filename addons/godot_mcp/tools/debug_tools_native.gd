@@ -2910,7 +2910,7 @@ func _register_play_and_verify(server_core: RefCounted) -> void:
 				},
 				"assertions": {
 					"type": "array",
-					"description": "Runtime checks evaluated after all steps. Each item: {expression, node_path?, expected?, operator?, description?, timeout_ms?}. Without 'expected' the expression must be truthy; with 'expected' it is compared using 'operator' (eq/ne/gt/gte/lt/lte).",
+					"description": "Runtime checks evaluated after all steps. Each item: {expression, node_path?, expected?, operator?, description?, timeout_ms?}. Without 'expected' the expression must be truthy; with 'expected' it is compared using 'operator' (eq/ne/gt/gte/lt/lte). Each assertion is evaluated once the probe responds: its 'timeout_ms' bounds how long to wait for that response, NOT repeated polling until the value becomes truthy. Use per-step 'wait_ms'/'wait_frames' or top-level 'settle_ms' to let the game reach the expected state before assertions run.",
 					"items": {"type": "object"}
 				},
 				"settle_ms": {"type": "integer", "default": 0, "description": "Wait this many milliseconds after the last step before evaluating assertions, to let the simulation settle."},
