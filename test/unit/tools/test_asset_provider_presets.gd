@@ -45,6 +45,11 @@ func test_subst_placeholders_pure_numeric_become_int():
 func test_subst_placeholders_mixed_size_stays_string():
 	assert_eq(_tools._subst_placeholders("{width}x{height}", "x", 64, 48), "64x48")
 
+func test_subst_placeholders_does_not_resubstitute_prompt():
+	# A prompt that itself contains "{width}"/"{height}" must be injected verbatim.
+	assert_eq(_tools._subst_placeholders("{prompt}", "a {width}px grid", 64, 48), "a {width}px grid")
+	assert_eq(_tools._subst_placeholders("{prompt} @ {width}x{height}", "draw {height} bars", 64, 48), "draw {height} bars @ 64x48")
+
 func test_subst_placeholders_recurses_dict_and_array():
 	var out: Variant = _tools._subst_placeholders({"p": "{prompt}", "list": ["{width}"]}, "cat", 10, 20)
 	assert_eq(out["p"], "cat")

@@ -96,6 +96,7 @@ var _tool_detail_panel: MCPToolDetailPanel = null
 var _selected_tool_name: String = ""
 var _language_option: OptionButton = null
 
+var _asset_provider_hint_label: Label = null
 var _asset_provider_label: Label = null
 var _asset_provider_option: OptionButton = null
 var _asset_key_env_label: Label = null
@@ -962,11 +963,11 @@ func _build_asset_provider_card(content: VBoxContainer) -> void:
 	var body: VBoxContainer = _settings_card(content, title)
 	_register_section_title(title, "ui.section_asset_provider")
 
-	var hint: Label = Label.new()
-	hint.text = _tr("ui.asset_provider_hint")
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD
-	hint.add_theme_color_override("font_color", Color(0.72, 0.72, 0.76))
-	body.add_child(hint)
+	_asset_provider_hint_label = Label.new()
+	_asset_provider_hint_label.text = _tr("ui.asset_provider_hint")
+	_asset_provider_hint_label.autowrap_mode = TextServer.AUTOWRAP_WORD
+	_asset_provider_hint_label.add_theme_color_override("font_color", Color(0.72, 0.72, 0.76))
+	body.add_child(_asset_provider_hint_label)
 
 	_asset_provider_label = Label.new()
 	_asset_provider_label.text = _tr("ui.asset_provider")
@@ -2041,6 +2042,20 @@ func _refresh_translations() -> void:
 		_tunnel_binary_label.text = _tr("ui.tunnel_binary")
 	if _tunnel_binary_edit:
 		_tunnel_binary_edit.placeholder_text = _tr("ui.tunnel_binary_placeholder")
+	if _asset_provider_hint_label:
+		_asset_provider_hint_label.text = _tr("ui.asset_provider_hint")
+	if _asset_provider_label:
+		_asset_provider_label.text = _tr("ui.asset_provider")
+	if _asset_provider_option and _asset_provider_option.item_count > 0:
+		_asset_provider_option.set_item_text(0, _tr("ui.asset_provider_none"))
+	if _asset_key_env_label:
+		_asset_key_env_label.text = _tr("ui.asset_key_env")
+	if _asset_key_env_edit:
+		_asset_key_env_edit.placeholder_text = _tr("ui.asset_key_env_placeholder")
+	if _asset_endpoint_label:
+		_asset_endpoint_label.text = _tr("ui.asset_endpoint")
+	if _asset_endpoint_edit:
+		_asset_endpoint_edit.placeholder_text = _tr("ui.asset_endpoint_placeholder")
 	if _preset_label:
 		_preset_label.text = _tr("ui.preset_label")
 	if _apply_preset_button:

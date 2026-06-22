@@ -5805,7 +5805,9 @@ func _resolve_external_config(params: Dictionary, category: String) -> Dictionar
 
 # Recursively substitute {prompt}/{width}/{height} in strings within a template
 # (string/dictionary/array). A value that is exactly "{width}"/"{height}" becomes
-# an int so numeric API fields stay numeric.
+# an int so numeric API fields stay numeric. {width}/{height} are substituted
+# before {prompt} so a user prompt that itself contains "{width}"/"{height}"
+# (e.g. "a {width}px grid") is injected verbatim and not re-substituted.
 func _subst_placeholders(value: Variant, prompt: String, width: int, height: int) -> Variant:
 	if value is String:
 		var s: String = value
@@ -5813,7 +5815,7 @@ func _subst_placeholders(value: Variant, prompt: String, width: int, height: int
 			return width
 		if s == "{height}":
 			return height
-		return s.replace("{prompt}", prompt).replace("{width}", str(width)).replace("{height}", str(height))
+		return s.replace("{width}", str(width)).replace("{height}", str(height)).replace("{prompt}", prompt)
 	if value is Dictionary:
 		var out: Dictionary = {}
 		for k in (value as Dictionary):

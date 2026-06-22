@@ -47,6 +47,20 @@ func test_settings_exposes_asset_provider_card() -> void:
 	assert_eq(panel._asset_provider_option.item_count, AssetProviderPresets.preset_ids().size() + 1, "Provider dropdown lists none + every preset")
 	assert_eq(panel._selected_asset_preset_id(), "", "Defaults to 'none' (offline placeholder)")
 
+func test_asset_provider_card_relabels_on_locale_switch() -> void:
+	var panel: Node = _make_panel()
+	autofree(panel._create_settings_tab())
+	panel._translation_manager.set_locale("zh")
+	panel._refresh_translations()
+	assert_eq(panel._asset_provider_label.text, panel._tr("ui.asset_provider"), "provider label refreshed to active locale")
+	assert_eq(panel._asset_key_env_label.text, panel._tr("ui.asset_key_env"), "key-env label refreshed")
+	assert_eq(panel._asset_endpoint_label.text, panel._tr("ui.asset_endpoint"), "endpoint label refreshed")
+	assert_eq(panel._asset_key_env_edit.placeholder_text, panel._tr("ui.asset_key_env_placeholder"), "key-env placeholder refreshed")
+	assert_eq(panel._asset_endpoint_edit.placeholder_text, panel._tr("ui.asset_endpoint_placeholder"), "endpoint placeholder refreshed")
+	assert_eq(panel._asset_provider_option.get_item_text(0), panel._tr("ui.asset_provider_none"), "'none' dropdown item refreshed")
+	assert_not_null(panel._asset_provider_hint_label, "hint is a member var so it can be refreshed")
+	assert_eq(panel._asset_provider_hint_label.text, panel._tr("ui.asset_provider_hint"), "hint refreshed")
+
 func test_settings_exposes_log_actions() -> void:
 	var panel: Node = _make_panel()
 	autofree(panel._create_settings_tab())
