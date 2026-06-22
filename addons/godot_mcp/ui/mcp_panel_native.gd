@@ -69,6 +69,8 @@ var _tunnel_manager: MCPTunnelManager = null
 var _tunnel_http: HTTPRequest = null
 var _tunnel_poll_timer: Timer = null
 var _tunnel_platform_key: String = ""
+var _tunnel_download_urls: PackedStringArray = []
+var _tunnel_download_index: int = 0
 var _status_dot: Panel = null
 var _section_titles: Array = []
 
@@ -645,10 +647,11 @@ func _on_tunnel_start_pressed() -> void:
 	_download_cloudflared(_tunnel_platform_key)
 
 func _download_cloudflared(key: String) -> void:
-	var url: String = MCPCloudflaredProvider.download_url(key)
-	if url.is_empty():
+	_tunnel_download_urls = MCPCloudflaredProvider.download_urls(key)
+	if _tunnel_download_urls.is_empty():
 		_set_tunnel_status("ui.tunnel_unsupported")
 		return
+	_tunnel_download_index = 0
 	DirAccess.make_dir_recursive_absolute(MCPCloudflaredProvider.INSTALL_DIR)
 	if _tunnel_http == null or not is_instance_valid(_tunnel_http):
 		_tunnel_http = HTTPRequest.new()
@@ -657,25 +660,38 @@ func _download_cloudflared(key: String) -> void:
 	_tunnel_http.download_file = MCPCloudflaredProvider.download_target(key)
 	if _tunnel_start_button:
 		_tunnel_start_button.disabled = true
-	_set_tunnel_status("ui.tunnel_downloading")
-	var err: int = _tunnel_http.request(url)
-	if err != OK:
-		if _tunnel_start_button:
-			_tunnel_start_button.disabled = false
-		_set_tunnel_status("ui.tunnel_download_failed")
+	_request_tunnel_download()
 
-func _on_tunnel_download_completed(result: int, response_code: int, _headers: PackedStringArray, _body: PackedByteArray) -> void:
+## Requests the current candidate URL (official first, then mirrors).
+func _request_tunnel_download() -> void:
+	_set_tunnel_status("ui.tunnel_downloading")
+	var err: int = _tunnel_http.request(_tunnel_download_urls[_tunnel_download_index])
+	if err != OK:
+		_advance_or_fail_download("ui.tunnel_download_failed")
+
+## Tries the next mirror; once candidates are exhausted, surfaces the last
+## failure reason and re-enables the start button.
+func _advance_or_fail_download(fail_status_key: String) -> void:
+	_tunnel_download_index += 1
+	if _tunnel_download_index < _tunnel_download_urls.size():
+		_request_tunnel_download()
+		return
 	if _tunnel_start_button:
 		_tunnel_start_button.disabled = false
+	_set_tunnel_status(fail_status_key)
+
+func _on_tunnel_download_completed(result: int, response_code: int, _headers: PackedStringArray, _body: PackedByteArray) -> void:
 	if result != HTTPRequest.RESULT_SUCCESS or response_code < 200 or response_code >= 300:
-		_set_tunnel_status("ui.tunnel_download_failed")
+		_advance_or_fail_download("ui.tunnel_download_failed")
 		return
 	var key: String = _tunnel_platform_key
 	var target: String = MCPCloudflaredProvider.download_target(key)
 	if not MCPCloudflaredProvider.verify_checksum(target, key):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(target))
-		_set_tunnel_status("ui.tunnel_verify_failed")
+		_advance_or_fail_download("ui.tunnel_verify_failed")
 		return
+	if _tunnel_start_button:
+		_tunnel_start_button.disabled = false
 	var bin: String = _install_binary(key, target)
 	if bin.is_empty():
 		_set_tunnel_status("ui.tunnel_start_failed")
