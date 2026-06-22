@@ -2899,7 +2899,7 @@ func _compare_values(actual: String, expected: String, operator: String) -> bool
 func _register_play_and_verify(server_core: RefCounted) -> void:
 	server_core.register_tool(
 		"play_and_verify",
-		"Drive the running game through a scripted sequence of input steps (with optional waits and screenshots), then evaluate a batch of runtime assertions, returning a single pass/fail report. Composes simulate_runtime_input_*, assert_runtime_condition and get_runtime_screenshot. Requires the game to be running with the runtime probe installed.",
+		"Drive the running game through a scripted sequence of input steps (with optional waits and screenshots), then evaluate a batch of runtime assertions, returning a single pass/fail report. Composes simulate_runtime_input_*, assert_runtime_condition and get_runtime_screenshot. Runtime errors the game emits during the run are captured via the debugger bridge and (by default) fail the report, so an AI agent gets the script error/stack feedback to self-correct. Requires the game to be running with the runtime probe installed.",
 		{
 			"type": "object",
 			"properties": {
@@ -2916,12 +2916,14 @@ func _register_play_and_verify(server_core: RefCounted) -> void:
 				"settle_ms": {"type": "integer", "default": 0, "description": "Wait this many milliseconds after the last step before evaluating assertions, to let the simulation settle."},
 				"screenshot_dir": {"type": "string", "default": "user://mcp_play_and_verify", "description": "Directory (res:// or user://) where per-step screenshots are written."},
 				"screenshot_format": {"type": "string", "enum": ["png", "jpg"], "default": "jpg"},
+				"fail_on_runtime_error": {"type": "boolean", "default": true, "description": "When true, any runtime error/printerr the game emits during the run (captured via the debugger bridge) fails the report, even if every assertion passes. The captured errors are always reported under 'runtime_errors'."},
+				"runtime_error_categories": {"type": "array", "items": {"type": "string"}, "default": ["stderr"], "description": "Debugger output categories treated as runtime errors. Defaults to ['stderr'], which covers bridged GDScript runtime errors and printerr output."},
 				"session_id": {"type": "integer"},
 				"timeout_ms": {"type": "integer", "default": 3000}
 			}
 		},
 		Callable(self, "_tool_play_and_verify"),
-		{"type": "object", "properties": {"status": {"type": "string"}, "passed": {"type": "boolean"}, "steps_executed": {"type": "integer"}, "assertions_total": {"type": "integer"}, "assertions_passed": {"type": "integer"}, "assertions": {"type": "array"}, "screenshots": {"type": "array"}, "errors": {"type": "array"}, "runtime_info": {"type": "object"}}},
+		{"type": "object", "properties": {"status": {"type": "string"}, "passed": {"type": "boolean"}, "steps_executed": {"type": "integer"}, "assertions_total": {"type": "integer"}, "assertions_passed": {"type": "integer"}, "assertions": {"type": "array"}, "screenshots": {"type": "array"}, "errors": {"type": "array"}, "runtime_errors": {"type": "array"}, "runtime_info": {"type": "object"}}},
 		{"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": true},
 		"supplementary", "Debug-Advanced"
 	)
@@ -2944,6 +2946,13 @@ func _tool_play_and_verify(params: Dictionary) -> Dictionary:
 			"error": "No running game with a runtime probe is reachable. Run the project and install_runtime_probe first.",
 			"detail": info
 		}
+
+	# Snapshot the debugger output cursor so we only attribute errors emitted from
+	# this point on (during the scripted run) to the report.
+	var bridge: RefCounted = _get_debugger_bridge()
+	var error_baseline_sequence: int = 0
+	if bridge and bridge.has_method("get_message_sequence"):
+		error_baseline_sequence = int(bridge.get_message_sequence())
 
 	var errors: Array = []
 	var screenshots: Array = []
@@ -3026,7 +3035,17 @@ func _tool_play_and_verify(params: Dictionary) -> Dictionary:
 		})
 
 	var end_info: Dictionary = await _tool_get_runtime_info(_merge_runtime_params(params, {}))
-	var all_passed: bool = errors.is_empty() and passed_count == assertion_results.size()
+
+	# Pull any runtime errors the game emitted during the scripted run and fold
+	# them into the verdict so an agent gets self-correction feedback.
+	var error_categories: Array = params.get("runtime_error_categories", ["stderr"]) if params.get("runtime_error_categories", ["stderr"]) is Array else ["stderr"]
+	var runtime_errors: Array = []
+	if bridge and bridge.has_method("get_output_events"):
+		var output_dump: Dictionary = bridge.get_output_events(500, 0, "asc", "")
+		runtime_errors = _filter_runtime_error_events(output_dump.get("events", []), error_baseline_sequence, error_categories)
+	var fail_on_runtime_error: bool = bool(params.get("fail_on_runtime_error", true))
+
+	var all_passed: bool = errors.is_empty() and passed_count == assertion_results.size() and (not fail_on_runtime_error or runtime_errors.is_empty())
 	return {
 		"status": "success" if all_passed else "failed",
 		"passed": all_passed,
@@ -3036,12 +3055,37 @@ func _tool_play_and_verify(params: Dictionary) -> Dictionary:
 		"assertions": assertion_results,
 		"screenshots": screenshots,
 		"errors": errors,
+		"runtime_errors": runtime_errors,
 		"runtime_info": {
 			"fps": end_info.get("fps", null),
 			"node_count": end_info.get("node_count", null),
 			"current_scene": end_info.get("current_scene", "")
 		}
 	}
+
+## Filters debugger output events down to those newer than `baseline_sequence`
+## whose category is in `categories`, normalizing the fields an agent needs to
+## locate and fix a runtime error.
+func _filter_runtime_error_events(events: Array, baseline_sequence: int, categories: Array) -> Array:
+	var out: Array = []
+	for entry in events:
+		if not (entry is Dictionary):
+			continue
+		var seq: int = int(entry.get("sequence", 0))
+		if seq <= baseline_sequence:
+			continue
+		var category: String = str(entry.get("category", ""))
+		if not categories.is_empty() and not categories.has(category):
+			continue
+		out.append({
+			"sequence": seq,
+			"category": category,
+			"message": str(entry.get("message", "")),
+			"file": str(entry.get("file", "")),
+			"line": int(entry.get("line", 0)),
+			"function": str(entry.get("function", ""))
+		})
+	return out
 
 ## Awaits roughly `ms` of real time by yielding editor frames, letting the
 ## separately-running game process advance while we wait.
