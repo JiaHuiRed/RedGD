@@ -38,7 +38,10 @@ const PRESETS: Dictionary = {
 		"api_key_env": "STABILITY_API_KEY",
 		"auth_header": "Authorization",
 		"auth_prefix": "Bearer ",
-		"headers": {"Content-Type": "application/json", "Accept": "application/json"},
+		# The v2beta stable-image endpoints require multipart/form-data, not JSON.
+		# With Accept: application/json the body comes back as {"image": "<base64>"}.
+		"body_format": "multipart",
+		"headers": {"Accept": "application/json"},
 		"request_body": {"prompt": "{prompt}", "output_format": "png"},
 		"response_field": "image"
 	},

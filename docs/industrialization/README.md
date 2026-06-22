@@ -66,8 +66,19 @@ preset and key env var once in the **MCP panel → Asset Generation**, so caller
 can just use `provider="external"`. Any explicit `endpoint`/`headers`/etc.
 override the preset, so unlisted providers still work.
 
+Notes:
+- Returned bytes are magic-byte validated. Images accept PNG/JPEG/WEBP; audio
+  accepts WAV/OGG/MP3 (so `elevenlabs_tts`, which returns MP3, lands cleanly).
+  For external audio, name the file `.mp3`/`.ogg`/`.wav` so Godot imports it.
+- `stability_image` posts `multipart/form-data` (`body_format: "multipart"`),
+  as required by the Stability v2beta API; set `body_format` yourself for other
+  multipart endpoints.
+- Presets that need no auth (e.g. `local_sd_webui`, `api_key_env: ""`) ignore any
+  panel-level key env var, so a global key set for another provider never leaks in.
+
 ```
 generate_asset({ type: "sprite", prompt: "pixel-art hero", provider: "external", preset: "openai_image" })
+generate_asset({ type: "sfx", prompt: "menu blip", provider: "external", preset: "elevenlabs_tts", resource_path: "res://audio/blip.mp3" })
 ```
 
 ## Read next

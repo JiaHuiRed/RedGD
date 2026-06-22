@@ -94,3 +94,64 @@ func test_external_preset_missing_key_errors_before_network():
 	var res: Dictionary = _tools._tool_generate_asset({"type": "sprite", "prompt": "x", "resource_path": "res://.test_tmp_xx/a.png", "provider": "external", "preset": "openai_image", "api_key_env": "DEVIN_TEST_UNSET_KEY_XYZ"})
 	assert_true(res.has("error"), "missing env var should error")
 	assert_true(str(res["error"]).find("DEVIN_TEST_UNSET_KEY_XYZ") != -1, "error names the missing env var")
+
+# --- api_key_env settings fallback guard -----------------------------------
+
+func _with_settings(overrides: Dictionary, body: Callable) -> void:
+	var mgr: MCPSettingsManager = MCPSettingsManager.new()
+	var original: Dictionary = mgr.load_settings()
+	var modified: Dictionary = original.duplicate(true)
+	for k in overrides:
+		modified[k] = overrides[k]
+	mgr.save_settings(modified)
+	body.call()
+	mgr.save_settings(original)
+
+func test_settings_key_env_not_injected_for_no_auth_preset():
+	# local_sd_webui intentionally needs no auth; a global panel key must not leak in.
+	_with_settings({"asset_provider_preset": "", "asset_provider_api_key_env": "GLOBAL_LEAK_KEY", "asset_provider_endpoint": ""}, func():
+		var cfg: Dictionary = _tools._resolve_external_config({"preset": "local_sd_webui", "prompt": "tree"}, "image")
+		assert_eq(cfg["api_key_env"], "", "no-auth preset must not borrow the panel-level api_key_env")
+	)
+
+func test_settings_key_env_applies_without_preset():
+	# Without any preset, the panel default key env var should still be used.
+	_with_settings({"asset_provider_preset": "", "asset_provider_api_key_env": "PANEL_KEY", "asset_provider_endpoint": "https://example.com/x"}, func():
+		var cfg: Dictionary = _tools._resolve_external_config({"prompt": "tree"}, "image")
+		assert_eq(cfg["api_key_env"], "PANEL_KEY", "panel default key env applies when no preset is active")
+	)
+
+func test_explicit_empty_api_key_env_opts_out_of_preset_auth():
+	var cfg: Dictionary = _tools._resolve_external_config({"preset": "openai_image", "prompt": "x", "api_key_env": ""}, "image")
+	assert_eq(cfg["api_key_env"], "", "explicit empty api_key_env opts out of the preset's auth")
+
+# --- multipart body encoding (Stability v2beta) ----------------------------
+
+func test_stability_preset_requests_multipart():
+	var cfg: Dictionary = _tools._resolve_external_config({"preset": "stability_image", "prompt": "a castle"}, "image")
+	assert_eq(cfg["body_format"], "multipart", "Stability preset must request multipart/form-data")
+	assert_eq(cfg["response_field"], "image")
+
+func test_encode_multipart_form_shape():
+	var encoded: Dictionary = _tools._encode_multipart_form({"prompt": "hi", "output_format": "png"})
+	assert_true(str(encoded["content_type"]).begins_with("multipart/form-data; boundary="), "content_type advertises a boundary")
+	var boundary: String = str(encoded["content_type"]).split("boundary=")[1]
+	var body: String = str(encoded["body"])
+	assert_true(body.find("name=\"prompt\"") != -1, "body carries the prompt field")
+	assert_true(body.find("hi") != -1, "body carries the prompt value")
+	assert_true(body.find("name=\"output_format\"") != -1, "body carries the output_format field")
+	assert_true(body.ends_with("--%s--\r\n" % boundary), "body closes with the final boundary")
+
+# --- mp3 validation --------------------------------------------------------
+
+func test_validate_audio_accepts_mp3_id3():
+	var bytes: PackedByteArray = PackedByteArray([0x49, 0x44, 0x33, 0x04, 0x00, 0x00])
+	assert_true(_tools._validate_asset_bytes(bytes, "audio"), "ID3-tagged MP3 must validate as audio")
+
+func test_validate_audio_accepts_mp3_frame_sync():
+	var bytes: PackedByteArray = PackedByteArray([0xFF, 0xFB, 0x90, 0x00])
+	assert_true(_tools._validate_asset_bytes(bytes, "audio"), "raw MPEG frame-sync MP3 must validate as audio")
+
+func test_validate_audio_rejects_json_error_body():
+	var bytes: PackedByteArray = "{\"error\":\"nope\"}".to_utf8_buffer()
+	assert_false(_tools._validate_asset_bytes(bytes, "audio"), "a JSON error body must not pass audio validation")
