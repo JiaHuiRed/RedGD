@@ -63,6 +63,9 @@ var _remote_copy_tunnel_button: Button = null
 var _tunnel_start_button: Button = null
 var _tunnel_stop_button: Button = null
 var _tunnel_status_label: Label = null
+var _tunnel_binary_row: HBoxContainer = null
+var _tunnel_binary_label: Label = null
+var _tunnel_binary_edit: LineEdit = null
 var _tunnel_manager: MCPTunnelManager = null
 var _tunnel_http: HTTPRequest = null
 var _tunnel_poll_timer: Timer = null
@@ -470,6 +473,23 @@ func _build_remote_card(content: VBoxContainer) -> void:
 	_tunnel_status_label.add_theme_color_override("font_color", Color(0.72, 0.72, 0.76))
 	body.add_child(_tunnel_status_label)
 
+	# Manual cloudflared path: a fallback shown only on platforms without a
+	# prebuilt binary, where auto-download/launch cannot work.
+	_tunnel_binary_row = HBoxContainer.new()
+	_tunnel_binary_row.add_theme_constant_override("separation", 10)
+	body.add_child(_tunnel_binary_row)
+	_tunnel_binary_label = Label.new()
+	_tunnel_binary_label.text = _tr("ui.tunnel_binary")
+	_tunnel_binary_label.custom_minimum_size = Vector2(120, 0)
+	_tunnel_binary_label.add_theme_color_override("font_color", Color(0.78, 0.78, 0.82))
+	_tunnel_binary_row.add_child(_tunnel_binary_label)
+	_tunnel_binary_edit = LineEdit.new()
+	_tunnel_binary_edit.placeholder_text = _tr("ui.tunnel_binary_placeholder")
+	_tunnel_binary_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_tunnel_binary_edit.text_changed.connect(_on_tunnel_binary_changed)
+	_tunnel_binary_row.add_child(_tunnel_binary_edit)
+	_tunnel_binary_row.visible = MCPCloudflaredProvider.detect_platform_key().is_empty()
+
 	_remote_url_label = Label.new()
 	_remote_url_label.text = _tr("ui.remote_url")
 	_remote_url_edit = LineEdit.new()
@@ -624,11 +644,28 @@ func _set_tunnel_status(key: String) -> void:
 	if _tunnel_status_label:
 		_tunnel_status_label.text = _tr(key)
 
+func _override_binary_path() -> String:
+	if _tunnel_binary_edit:
+		return _tunnel_binary_edit.text.strip_edges()
+	return ""
+
+func _on_tunnel_binary_changed(_text: String) -> void:
+	_debounce_save()
+
 func _on_tunnel_start_pressed() -> void:
 	if _tunnel_manager == null:
 		_tunnel_manager = MCPTunnelManager.new()
 	if _tunnel_manager.is_running():
 		_set_tunnel_status("ui.tunnel_already")
+		return
+
+	# Manual override (shown only on unsupported platforms): launch directly.
+	var override: String = _override_binary_path()
+	if not override.is_empty():
+		if not FileAccess.file_exists(override):
+			_set_tunnel_status("ui.tunnel_start_failed")
+			return
+		_launch_tunnel(override)
 		return
 
 	_tunnel_platform_key = MCPCloudflaredProvider.detect_platform_key()
@@ -1931,6 +1968,10 @@ func _refresh_translations() -> void:
 		_tunnel_start_button.text = _tr("ui.tunnel_start")
 	if _tunnel_stop_button:
 		_tunnel_stop_button.text = _tr("ui.tunnel_stop")
+	if _tunnel_binary_label:
+		_tunnel_binary_label.text = _tr("ui.tunnel_binary")
+	if _tunnel_binary_edit:
+		_tunnel_binary_edit.placeholder_text = _tr("ui.tunnel_binary_placeholder")
 	if _preset_label:
 		_preset_label.text = _tr("ui.preset_label")
 	if _apply_preset_button:
@@ -2005,6 +2046,8 @@ func _load_settings() -> void:
 	_log_level_option.select(s.log_level)
 	_security_level_option.select(s.security_level)
 	_rate_limit_spin.value = s.rate_limit
+	if _tunnel_binary_edit:
+		_tunnel_binary_edit.text = s.cloudflared_path
 	if _translation_manager and s.language != _translation_manager.get_locale():
 		_translation_manager.set_locale(s.language)
 		_refresh_translations()
@@ -2031,7 +2074,8 @@ func _save_settings() -> void:
 		"log_level": _log_level_option.selected if _log_level_option else 2,
 		"security_level": _security_level_option.selected if _security_level_option else 1,
 		"rate_limit": int(_rate_limit_spin.value) if _rate_limit_spin else 1000,
-		"language": _translation_manager.get_locale() if _translation_manager else "en"
+		"language": _translation_manager.get_locale() if _translation_manager else "en",
+		"cloudflared_path": _tunnel_binary_edit.text if _tunnel_binary_edit else ""
 	}
 	_settings_manager.save_settings(settings)
 
