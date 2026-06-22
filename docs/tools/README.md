@@ -1,7 +1,8 @@
 # Tools Reference
 
-The plugin exposes **202 MCP tools** to connected AI clients, split into 6 categories.
-Every tool is listed — with its tier and description — in the category page it belongs to.
+The plugin exposes **204 MCP tools** to connected AI clients: 6 functional categories plus
+a small always-on **Meta** group for tool discovery. Every tool is listed — with its tier and
+description — in the category page it belongs to.
 
 ## Categories
 
@@ -13,7 +14,10 @@ Every tool is listed — with its tier and description — in the category page 
 | Editor | 23 | 4 | 19 | [editor-tools.md](editor-tools.md) |
 | Debug & Runtime | 71 | 3 | 68 | [debug-tools.md](debug-tools.md) |
 | Project | 53 | 3 | 50 | [project-tools.md](project-tools.md) |
-| **Total** | **202** | **30** | **172** | |
+| Meta | 2 | — | — | [Meta tools](#meta-tools-tool-discovery) |
+| **Total** | **204** | **30** | **172** | |
+
+(The 2 Meta tools are always-on and counted separately from the 30 core / 172 advanced split.)
 
 ## Core vs. advanced
 
@@ -23,8 +27,29 @@ single source of truth for the tables above.
 - **Core** — the 30 highest-value tools. They are enabled automatically and returned by
   `tools/list` as soon as the server starts. The cap is `CORE_MAX_COUNT = 30`.
 - **Advanced** — the remaining 172 tools. They are registered but **disabled by default**
-  (`enabled = (category == "core")`), so they are hidden from `tools/list` until you turn
-  them on. This keeps the default tool surface small and focused for the model.
+  (`enabled = (category == "core" or category == "meta")`), so they are hidden from
+  `tools/list` until you turn them on. This keeps the default tool surface small and focused
+  for the model.
+- **Meta** — 2 always-on tools (`list_tool_catalog`, `enable_tools`) that are never hidden,
+  not even by the `minimal_core` preset, so the model can always discover and switch on more
+  capabilities on demand. See [Meta tools](#meta-tools-tool-discovery).
+
+## Meta tools (tool discovery)
+
+The **Meta** group is the key to keeping `tools/list` small without losing access to the full
+toolset. Both tools have `category = "meta"`, are always enabled, and survive every preset.
+
+| Tool | What it does |
+| --- | --- |
+| `list_tool_catalog` | Lists registered tools grouped by category, with a one-line description and each tool's enabled state — **without** loading every full schema. Filter by `group` or `query`, or pass `enabled_only` / `include_descriptions` to shrink the response. |
+| `enable_tools` | Enables/disables tools on demand. Pass `tools` and/or `groups` (with `enabled`, and optional `exclusive` to reset to a core-only baseline first), or `preset` to apply a curated profile wholesale. Emits `notifications/tools/list_changed` so the client refreshes its tool list. Core and meta tools always stay enabled. |
+
+**Lazy-loading workflow:** start from `minimal_core` (≈32 visible tools) → call
+`list_tool_catalog({group: "Debug-Advanced"})` to discover what's available →
+`enable_tools({groups: ["Debug-Advanced"]})` (or `enable_tools({preset: "debugging"})`) to
+switch them on. This keeps the steady-state context to just the core tools plus the catalog
+tool, minimising token/compute cost. See also the
+[task → preset guide](../configuration.md#tool-presets).
 
 ### Enabling advanced tools
 
@@ -49,6 +74,7 @@ Each category maps to one implementation file under `addons/godot_mcp/tools/`:
 | Scene | `scene_tools_native.gd` |
 | Editor | `editor_tools_native.gd` |
 | Debug & Runtime | `debug_tools_native.gd` |
+| Meta | `meta_tools_native.gd` |
 | Project | `project_tools_native.gd` |
 
 To add a new tool, follow [Contributing → Adding a tool](../contributing.md#adding-a-new-tool).

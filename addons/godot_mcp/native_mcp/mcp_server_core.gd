@@ -811,7 +811,7 @@ func register_tool(name: String, description: String,
 	tool.callable = callable
 	tool.category = category
 	tool.group = group
-	tool.enabled = (category == "core")
+	tool.enabled = (category == "core" or category == "meta")
 	
 	if not tool.is_valid():
 		var reason: String = "unknown"
