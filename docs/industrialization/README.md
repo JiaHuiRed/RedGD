@@ -47,6 +47,40 @@ runtime is required for the offline path.
 | Verify | visual | `get_editor_screenshot`, `compare_render_screenshots` |
 | Iterate | inspect/fix | `get_debug_output`, `detect_broken_scripts`, `validate_script`, `audit_project_health` |
 
+## Using a real art / TTS provider (BYO key)
+
+The offline placeholder path needs no setup. To produce real art or speech, call
+`generate_asset` with `provider="external"` and a `preset`:
+
+| Preset | Kind | Default key env var |
+| --- | --- | --- |
+| `openai_image` | image | `OPENAI_API_KEY` |
+| `stability_image` | image | `STABILITY_API_KEY` |
+| `elevenlabs_tts` | audio | `ELEVENLABS_API_KEY` |
+| `local_sd_webui` | image | none (local AUTOMATIC1111) |
+
+The preset fills the endpoint, headers, request body and response field; you
+only supply your own API key via the named **OS environment variable** (the key
+value is never stored in the project or logged). You can also set a default
+preset and key env var once in the **MCP panel → Asset Generation**, so callers
+can just use `provider="external"`. Any explicit `endpoint`/`headers`/etc.
+override the preset, so unlisted providers still work.
+
+Notes:
+- Returned bytes are magic-byte validated. Images accept PNG/JPEG/WEBP; audio
+  accepts WAV/OGG/MP3 (so `elevenlabs_tts`, which returns MP3, lands cleanly).
+  For external audio, name the file `.mp3`/`.ogg`/`.wav` so Godot imports it.
+- `stability_image` posts `multipart/form-data` (`body_format: "multipart"`),
+  as required by the Stability v2beta API; set `body_format` yourself for other
+  multipart endpoints.
+- Presets that need no auth (e.g. `local_sd_webui`, `api_key_env: ""`) ignore any
+  panel-level key env var, so a global key set for another provider never leaks in.
+
+```
+generate_asset({ type: "sprite", prompt: "pixel-art hero", provider: "external", preset: "openai_image" })
+generate_asset({ type: "sfx", prompt: "menu blip", provider: "external", preset: "elevenlabs_tts", resource_path: "res://audio/blip.mp3" })
+```
+
 ## Read next
 
 - [GDD → task decomposition](gdd-to-tasks.md) — the planner playbook.
