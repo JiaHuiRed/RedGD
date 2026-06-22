@@ -129,6 +129,8 @@ func _capture_mcp_message(message: String, data: Array) -> bool:
 			return _handle_update_audio_bus(data)
 		"get_runtime_screenshot":
 			return _handle_get_runtime_screenshot(data)
+		"advance_frames":
+			return _handle_advance_frames(data)
 		"debug_break":
 			EngineDebugger.debug(true, false)
 			return true
@@ -435,6 +437,86 @@ func _handle_simulate_input_action(data: Array) -> bool:
 		"runtime_pressed": Input.is_action_pressed(action)
 	}])
 	return true
+
+# Deterministically advances the running game by an exact number of frames,
+# sampling expressions each frame so the editor side gets a frame-indexed
+# trajectory instead of a wall-clock approximation. Started as a fire-and-forget
+# coroutine: the capture callback returns true immediately and the result is
+# delivered later via the "mcp:frames_advanced" message once stepping finishes.
+func _handle_advance_frames(data: Array) -> bool:
+	var frames: int = 1
+	if not data.is_empty() and (data[0] is int or data[0] is float):
+		frames = maxi(int(data[0]), 0)
+	var frame_type: String = "physics"
+	if data.size() >= 2 and data[1] is String and not String(data[1]).is_empty():
+		frame_type = String(data[1]).to_lower()
+	var sample_specs: Array = data[2] if data.size() >= 3 and data[2] is Array else []
+	_run_advance_frames(frames, frame_type, sample_specs)
+	return true
+
+func _run_advance_frames(frames: int, frame_type: String, sample_specs: Array) -> void:
+	var tree: SceneTree = get_tree()
+	var use_physics: bool = frame_type != "process"
+	var compiled: Array = []
+	for spec in sample_specs:
+		if not (spec is Dictionary):
+			continue
+		var expr_text: String = str(spec.get("expression", "")).strip_edges()
+		if expr_text.is_empty():
+			continue
+		var ex: Expression = Expression.new()
+		var parse_error: int = ex.parse(expr_text, [])
+		compiled.append({
+			"label": str(spec.get("label", expr_text)),
+			"node_path": str(spec.get("node_path", "")),
+			"expr": ex,
+			"parse_ok": parse_error == OK
+		})
+
+	# Fixed per-frame delta for physics; for render frames it is variable so we
+	# report the current target as a best-effort hint.
+	var step_delta: float = 1.0 / float(maxi(Engine.physics_ticks_per_second, 1))
+	if not use_physics:
+		var target_fps: int = Engine.max_fps
+		step_delta = (1.0 / float(target_fps)) if target_fps > 0 else 0.0
+
+	var samples: Array = []
+	samples.append(_sample_frame(0, compiled))
+	for i in range(frames):
+		if not is_inside_tree() or not tree:
+			break
+		if use_physics:
+			await tree.physics_frame
+		else:
+			await tree.process_frame
+		samples.append(_sample_frame(i + 1, compiled))
+
+	EngineDebugger.send_message("mcp:frames_advanced", [{
+		"frames": frames,
+		"frame_type": "physics" if use_physics else "process",
+		"step_delta": step_delta,
+		"physics_frames": Engine.get_physics_frames(),
+		"process_frames": Engine.get_process_frames(),
+		"samples": samples
+	}])
+
+func _sample_frame(index: int, compiled: Array) -> Dictionary:
+	var values: Dictionary = {}
+	for c in compiled:
+		var label: String = str(c.get("label", ""))
+		if not bool(c.get("parse_ok", false)):
+			values[label] = null
+			continue
+		var base_instance: Object = _resolve_target_node(str(c.get("node_path", "")))
+		if not base_instance:
+			base_instance = get_tree().current_scene if get_tree().current_scene else self
+		var ex: Expression = c.get("expr")
+		var result: Variant = ex.execute([], base_instance, false)
+		if ex.has_execute_failed():
+			values[label] = null
+		else:
+			values[label] = _serialize_value(result)
+	return {"frame_index": index, "values": values}
 
 func _handle_simulate_input_event(data: Array) -> bool:
 	if data.is_empty() or not data[0] is Dictionary:

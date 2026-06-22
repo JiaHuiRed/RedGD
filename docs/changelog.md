@@ -43,6 +43,17 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/).
   Supports init/add_task/update_task/set_status/set_dod/get/next/remove_task with dependency
   and cycle validation, a DoD gate on marking tasks done, and next-actionable + progress
   queries.
+- **`play_and_verify` — deterministic headless playtest + game-feel metrics.** A new
+  `deterministic=true` mode makes per-step `wait_frames` (and `settle_frames`) advance an
+  exact number of physics frames *inside* the game (`await physics_frame`) instead of a
+  wall-clock approximation, so a scripted run is frame-stepped, fps-independent and
+  reproducible. Paired with a new `sample` parameter, the whole stepped run is executed in a
+  single debugger round-trip (backed by a new runtime-probe `advance_frames` command) and
+  returns a frame-indexed `trajectory` plus per-label `metrics` (min/max/first/last/delta/
+  range/peak frame+time). Assertions can now target those metrics via
+  `{metric, aggregate, operator, expected}`, and `include_trajectory=false` keeps responses
+  compact on long runs. Backward compatible: defaults leave the original wall-clock behavior
+  unchanged.
 
 ## 1.0.6
 

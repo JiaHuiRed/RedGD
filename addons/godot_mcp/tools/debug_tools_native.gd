@@ -2899,21 +2899,26 @@ func _compare_values(actual: String, expected: String, operator: String) -> bool
 func _register_play_and_verify(server_core: RefCounted) -> void:
 	server_core.register_tool(
 		"play_and_verify",
-		"Drive the running game through a scripted sequence of input steps (with optional waits and screenshots), then evaluate a batch of runtime assertions, returning a single pass/fail report. Composes simulate_runtime_input_*, assert_runtime_condition and get_runtime_screenshot. Runtime errors the game emits during the run are captured via the debugger bridge and (by default) fail the report, so an AI agent gets the script error/stack feedback to self-correct. Requires the game to be running with the runtime probe installed.",
+		"Drive the running game through a scripted sequence of input steps (with optional waits and screenshots), then evaluate a batch of runtime assertions, returning a single pass/fail report. Composes simulate_runtime_input_*, assert_runtime_condition and get_runtime_screenshot. Set deterministic=true to make per-step 'wait_frames' advance an exact number of physics frames inside the game (frame-stepped, fps-independent and reproducible) instead of a wall-clock approximation; combine with 'sample' to record a frame-indexed trajectory (e.g. position.y, velocity) returned under 'trajectory' for measuring game feel. Runtime errors the game emits during the run are captured via the debugger bridge and (by default) fail the report, so an AI agent gets the script error/stack feedback to self-correct. Requires the game to be running with the runtime probe installed.",
 		{
 			"type": "object",
 			"properties": {
 				"steps": {
 					"type": "array",
-					"description": "Ordered input steps. Each step may set 'action' (InputMap action name) with optional 'pressed'/'strength', or 'event' (structured InputEvent payload). Optional per-step 'wait_ms' or 'wait_frames' pauses after the input, and 'screenshot' captures a frame after the wait.",
+					"description": "Ordered input steps. Each step may set 'action' (InputMap action name) with optional 'pressed'/'strength', or 'event' (structured InputEvent payload). Optional per-step 'wait_ms' (wall-clock) or 'wait_frames' pauses after the input, and 'screenshot' captures a frame after the wait. When deterministic=true, 'wait_frames' advances exactly that many frames inside the game.",
 					"items": {"type": "object"}
 				},
 				"assertions": {
 					"type": "array",
-					"description": "Runtime checks evaluated after all steps. Each item: {expression, node_path?, expected?, operator?, description?, timeout_ms?}. Without 'expected' the expression must be truthy; with 'expected' it is compared using 'operator' (eq/ne/gt/gte/lt/lte). Each assertion is evaluated once the probe responds: its 'timeout_ms' bounds how long to wait for that response, NOT repeated polling until the value becomes truthy. Use per-step 'wait_ms'/'wait_frames' or top-level 'settle_ms' to let the game reach the expected state before assertions run.",
+					"description": "Runtime checks evaluated after all steps. Each item: {expression, node_path?, expected?, operator?, description?, timeout_ms?}. Without 'expected' the expression must be truthy; with 'expected' it is compared using 'operator' (eq/ne/gt/gte/lt/lte). Each assertion is evaluated once the probe responds: its 'timeout_ms' bounds how long to wait for that response, NOT repeated polling until the value becomes truthy. Use per-step 'wait_ms'/'wait_frames' or top-level 'settle_ms'/'settle_frames' to let the game reach the expected state before assertions run.",
 					"items": {"type": "object"}
 				},
-				"settle_ms": {"type": "integer", "default": 0, "description": "Wait this many milliseconds after the last step before evaluating assertions, to let the simulation settle."},
+				"deterministic": {"type": "boolean", "default": false, "description": "When true, per-step 'wait_frames' and top-level 'settle_frames' advance an exact number of frames inside the game process (await physics/process frame), making timing fps-independent and reproducible. When false (default), 'wait_frames' is approximated as frames*17 wall-clock ms (legacy behavior)."},
+				"frame_type": {"type": "string", "enum": ["physics", "process"], "default": "physics", "description": "deterministic=true only: whether 'wait_frames'/'settle_frames' step physics frames (fixed delta, best for movement/feel) or render/process frames."},
+				"sample": {"type": "array", "items": {"type": "object"}, "description": "deterministic=true only: expressions sampled every advanced frame to build a trajectory. Each item: {expression, node_path?, label?}. Returned under 'trajectory' as frame-indexed {frame_index, values:{label:value}} entries, and aggregated under 'metrics' per label (min/max/first/last/delta/range/min_frame/max_frame/min_time/max_time/samples) for measuring game feel (e.g. jump height = metrics.pos_y.min for upward-negative Y)."},
+				"include_trajectory": {"type": "boolean", "default": true, "description": "When false, omit the raw per-frame 'trajectory' from the report (the compact 'metrics' aggregates are still returned). Use this to keep responses small on long runs."},
+				"settle_ms": {"type": "integer", "default": 0, "description": "Wait this many wall-clock milliseconds after the last step before evaluating assertions, to let the simulation settle."},
+				"settle_frames": {"type": "integer", "default": 0, "description": "deterministic=true only: advance this many frames after the last step before evaluating assertions (sampled into the trajectory)."},
 				"screenshot_dir": {"type": "string", "default": "user://mcp_play_and_verify", "description": "Directory (res:// or user://) where per-step screenshots are written."},
 				"screenshot_format": {"type": "string", "enum": ["png", "jpg"], "default": "jpg"},
 				"fail_on_runtime_error": {"type": "boolean", "default": true, "description": "When true, any runtime error/printerr the game emits during the run (captured via the debugger bridge) fails the report, even if every assertion passes. The captured errors are always reported under 'runtime_errors'."},
@@ -2923,7 +2928,7 @@ func _register_play_and_verify(server_core: RefCounted) -> void:
 			}
 		},
 		Callable(self, "_tool_play_and_verify"),
-		{"type": "object", "properties": {"status": {"type": "string"}, "passed": {"type": "boolean"}, "steps_executed": {"type": "integer"}, "assertions_total": {"type": "integer"}, "assertions_passed": {"type": "integer"}, "assertions": {"type": "array"}, "screenshots": {"type": "array"}, "errors": {"type": "array"}, "runtime_errors": {"type": "array"}, "runtime_info": {"type": "object"}}},
+		{"type": "object", "properties": {"status": {"type": "string"}, "passed": {"type": "boolean"}, "deterministic": {"type": "boolean"}, "steps_executed": {"type": "integer"}, "frames_advanced": {"type": "integer"}, "assertions_total": {"type": "integer"}, "assertions_passed": {"type": "integer"}, "assertions": {"type": "array"}, "trajectory": {"type": "array"}, "screenshots": {"type": "array"}, "errors": {"type": "array"}, "runtime_errors": {"type": "array"}, "runtime_info": {"type": "object"}}},
 		{"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": true},
 		"supplementary", "Debug-Advanced"
 	)
@@ -2931,6 +2936,13 @@ func _register_play_and_verify(server_core: RefCounted) -> void:
 func _tool_play_and_verify(params: Dictionary) -> Dictionary:
 	var steps: Array = params.get("steps", []) if params.get("steps", []) is Array else []
 	var assertions: Array = params.get("assertions", []) if params.get("assertions", []) is Array else []
+	var deterministic: bool = bool(params.get("deterministic", false))
+	var frame_type: String = "process" if String(params.get("frame_type", "physics")) == "process" else "physics"
+	var sample_specs: Array = params.get("sample", []) if params.get("sample", []) is Array else []
+	var include_trajectory: bool = bool(params.get("include_trajectory", true))
+	var trajectory: Array = []
+	var frame_cursor: int = 0
+	var step_delta: float = 0.0
 	var format: String = String(params.get("screenshot_format", "jpg")).to_lower()
 	if not ["png", "jpg"].has(format):
 		format = "jpg"
@@ -2977,10 +2989,22 @@ func _tool_play_and_verify(params: Dictionary) -> Dictionary:
 				errors.append({"step": i, "phase": "input", "error": event_result["error"]})
 
 		var wait_ms: int = int(step.get("wait_ms", 0))
-		if step.has("wait_frames"):
-			wait_ms = maxi(wait_ms, int(step["wait_frames"]) * 17)
-		if wait_ms > 0:
-			await _await_real_ms(wait_ms)
+		if deterministic and step.has("wait_frames"):
+			var step_frames: int = maxi(int(step["wait_frames"]), 0)
+			if step_frames > 0:
+				var adv: Dictionary = await _advance_runtime_frames(params, step_frames, frame_type, sample_specs)
+				if adv.has("error"):
+					errors.append({"step": i, "phase": "advance", "error": adv["error"]})
+				else:
+					step_delta = float(adv.get("step_delta", step_delta))
+					frame_cursor = _append_trajectory(trajectory, adv.get("samples", []), frame_cursor)
+			if wait_ms > 0:
+				await _await_real_ms(wait_ms)
+		else:
+			if step.has("wait_frames"):
+				wait_ms = maxi(wait_ms, int(step["wait_frames"]) * 17)
+			if wait_ms > 0:
+				await _await_real_ms(wait_ms)
 
 		if bool(step.get("screenshot", false)):
 			var save_path: String = "%s/step_%02d.%s" % [screenshot_dir, i, ext]
@@ -2992,16 +3016,32 @@ func _tool_play_and_verify(params: Dictionary) -> Dictionary:
 				screenshots.append({"step": i, "save_path": save_path, "size": shot_result.get("size", "")})
 		executed += 1
 
+	if deterministic and int(params.get("settle_frames", 0)) > 0:
+		var settle_adv: Dictionary = await _advance_runtime_frames(params, int(params["settle_frames"]), frame_type, sample_specs)
+		if settle_adv.has("error"):
+			errors.append({"phase": "settle", "error": settle_adv["error"]})
+		else:
+			step_delta = float(settle_adv.get("step_delta", step_delta))
+			frame_cursor = _append_trajectory(trajectory, settle_adv.get("samples", []), frame_cursor)
 	if int(params.get("settle_ms", 0)) > 0:
 		await _await_real_ms(int(params["settle_ms"]))
+
+	var metrics: Dictionary = _compute_trajectory_metrics(trajectory, step_delta)
 
 	var assertion_results: Array = []
 	var passed_count: int = 0
 	for i in assertions.size():
 		var spec: Dictionary = assertions[i] if assertions[i] is Dictionary else {}
+		if spec.has("metric"):
+			var metric_result: Dictionary = _evaluate_metric_assertion(spec, metrics)
+			metric_result["index"] = i
+			if bool(metric_result.get("passed", false)):
+				passed_count += 1
+			assertion_results.append(metric_result)
+			continue
 		var expression: String = String(spec.get("expression", "")).strip_edges()
 		if expression.is_empty():
-			assertion_results.append({"index": i, "passed": false, "error": "Missing 'expression'"})
+			assertion_results.append({"index": i, "passed": false, "error": "Missing 'expression' (or 'metric')"})
 			continue
 		var assert_params: Dictionary = _merge_runtime_params(params, {"expression": expression})
 		assert_params["description"] = String(spec.get("description", spec.get("label", expression)))
@@ -3046,9 +3086,10 @@ func _tool_play_and_verify(params: Dictionary) -> Dictionary:
 	var fail_on_runtime_error: bool = bool(params.get("fail_on_runtime_error", true))
 
 	var all_passed: bool = errors.is_empty() and passed_count == assertion_results.size() and (not fail_on_runtime_error or runtime_errors.is_empty())
-	return {
+	var report: Dictionary = {
 		"status": "success" if all_passed else "failed",
 		"passed": all_passed,
+		"deterministic": deterministic,
 		"steps_executed": executed,
 		"assertions_total": assertion_results.size(),
 		"assertions_passed": passed_count,
@@ -3062,6 +3103,141 @@ func _tool_play_and_verify(params: Dictionary) -> Dictionary:
 			"current_scene": end_info.get("current_scene", "")
 		}
 	}
+	if deterministic:
+		report["frames_advanced"] = maxi(frame_cursor - 1, 0)
+		report["metrics"] = metrics
+		if include_trajectory:
+			report["trajectory"] = trajectory
+	return report
+
+## Deterministically advances the running game by `frames` frames, sampling
+## `sample_specs` each frame, via the runtime probe's advance_frames command.
+## Returns {samples, step_delta, ...} or {error}.
+func _advance_runtime_frames(params: Dictionary, frames: int, frame_type: String, sample_specs: Array) -> Dictionary:
+	frames = maxi(frames, 0)
+	var ft: String = "process" if frame_type == "process" else "physics"
+	var probe_params: Dictionary = _merge_runtime_params(params, {})
+	# Each stepped frame costs ~1/60s; budget wall-clock time so the poll loop
+	# does not give up before the in-game stepping coroutine finishes.
+	var needed_ms: int = frames * 20 + 500
+	probe_params["timeout_ms"] = maxi(int(params.get("timeout_ms", 3000)), needed_ms)
+	return await _request_runtime_probe_poll(
+		"advance_frames", [frames, ft, sample_specs], ["mcp:frames_advanced"], probe_params
+	)
+
+## Appends probe-returned per-frame samples to `trajectory` with a continuous
+## global frame index. The first sample of each advance is the pre-step state,
+## so it is skipped after the first advance to avoid duplicating the boundary
+## frame. Returns the updated cursor (== trajectory length).
+func _append_trajectory(trajectory: Array, samples: Array, cursor: int) -> int:
+	for k in samples.size():
+		if k == 0 and not trajectory.is_empty():
+			continue
+		var sample: Dictionary = samples[k] if samples[k] is Dictionary else {}
+		trajectory.append({"frame_index": cursor, "values": sample.get("values", {})})
+		cursor += 1
+	return cursor
+
+## Aggregates a frame-indexed trajectory into per-label metrics so game feel
+## becomes measurable (e.g. jump height, time-to-apex). Only numeric sample
+## values contribute. `step_delta` converts frame indices to seconds.
+func _compute_trajectory_metrics(trajectory: Array, step_delta: float) -> Dictionary:
+	var acc: Dictionary = {}
+	for entry in trajectory:
+		if not (entry is Dictionary):
+			continue
+		var frame_index: int = int(entry.get("frame_index", 0))
+		var values: Dictionary = entry.get("values", {}) if entry.get("values", {}) is Dictionary else {}
+		for label in values:
+			var raw: Variant = values[label]
+			if not (raw is int or raw is float):
+				continue
+			var value: float = float(raw)
+			if not acc.has(label):
+				acc[label] = {"min": value, "max": value, "first": value, "last": value, "min_frame": frame_index, "max_frame": frame_index, "samples": 0}
+			var data: Dictionary = acc[label]
+			if value < float(data["min"]):
+				data["min"] = value
+				data["min_frame"] = frame_index
+			if value > float(data["max"]):
+				data["max"] = value
+				data["max_frame"] = frame_index
+			data["last"] = value
+			data["samples"] = int(data["samples"]) + 1
+			acc[label] = data
+
+	var metrics: Dictionary = {}
+	for label in acc:
+		var data: Dictionary = acc[label]
+		var minimum: float = float(data["min"])
+		var maximum: float = float(data["max"])
+		var first_value: float = float(data["first"])
+		var last_value: float = float(data["last"])
+		var min_frame: int = int(data["min_frame"])
+		var max_frame: int = int(data["max_frame"])
+		metrics[label] = {
+			"min": minimum,
+			"max": maximum,
+			"first": first_value,
+			"last": last_value,
+			"delta": last_value - first_value,
+			"range": maximum - minimum,
+			"min_frame": min_frame,
+			"max_frame": max_frame,
+			"min_time": float(min_frame) * step_delta,
+			"max_time": float(max_frame) * step_delta,
+			"samples": int(data["samples"])
+		}
+	return metrics
+
+## Evaluates a trajectory metric assertion: {metric, aggregate?, operator?, expected?}.
+func _evaluate_metric_assertion(spec: Dictionary, metrics: Dictionary) -> Dictionary:
+	var label: String = String(spec.get("metric", "")).strip_edges()
+	var aggregate: String = String(spec.get("aggregate", "max")).strip_edges().to_lower()
+	var result: Dictionary = {
+		"description": String(spec.get("description", spec.get("label", "%s.%s" % [label, aggregate]))),
+		"metric": label,
+		"aggregate": aggregate,
+		"passed": false
+	}
+	if label.is_empty():
+		result["error"] = "metric assertion requires a non-empty 'metric'"
+		return result
+	if not metrics.has(label):
+		result["error"] = "metric '%s' not found in trajectory (set 'sample' and deterministic=true)" % label
+		return result
+	var label_metrics: Dictionary = metrics[label]
+	if not label_metrics.has(aggregate):
+		result["error"] = "unknown aggregate '%s' for metric '%s'" % [aggregate, label]
+		return result
+	var actual: Variant = label_metrics[aggregate]
+	result["actual"] = actual
+	if not spec.has("expected"):
+		result["passed"] = bool(actual)
+		return result
+	var operator: String = String(spec.get("operator", "eq")).strip_edges().to_lower()
+	if operator.is_empty():
+		operator = "eq"
+	result["operator"] = operator
+	result["expected"] = spec["expected"]
+	result["passed"] = _compare_metric_value(float(actual), float(spec["expected"]), operator)
+	return result
+
+func _compare_metric_value(actual: float, expected: float, operator: String) -> bool:
+	match operator:
+		"eq":
+			return is_equal_approx(actual, expected)
+		"ne":
+			return not is_equal_approx(actual, expected)
+		"gt":
+			return actual > expected
+		"gte":
+			return actual >= expected
+		"lt":
+			return actual < expected
+		"lte":
+			return actual <= expected
+	return false
 
 ## Filters debugger output events down to those newer than `baseline_sequence`
 ## whose category is in `categories`, normalizing the fields an agent needs to

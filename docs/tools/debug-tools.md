@@ -44,7 +44,7 @@ The largest category. Edit-time debugging (logs, debugger sessions, breakpoints,
 | `evaluate_runtime_expression` | Advanced | Evaluate an expression in the running game context. |
 | `await_runtime_condition` | Advanced | Wait for a condition to be true in the running game. |
 | `assert_runtime_condition` | Advanced | Assert a condition in the running game. |
-| `play_and_verify` | Advanced | Drive the running game through scripted input steps (with waits/screenshots), then evaluate a batch of runtime assertions and return a single pass/fail report. Runtime errors emitted during the run are captured via the debugger bridge and (by default) fail the report. |
+| `play_and_verify` | Advanced | Drive the running game through scripted input steps (with waits/screenshots), then evaluate a batch of runtime assertions and return a single pass/fail report. Set `deterministic=true` to make per-step `wait_frames` advance an exact number of physics frames inside the game (frame-stepped, fps-independent, reproducible) instead of a wall-clock approximation; combine with `sample` to record a frame-indexed `trajectory` and per-label `metrics` (min/max/first/last/delta/peak frame+time) for measuring game feel, and assert on them via `{metric, aggregate, operator, expected}`. Runtime errors emitted during the run are captured via the debugger bridge and (by default) fail the report. |
 | `get_debug_threads` | Advanced | Return DAP-style debugger threads visible from the active Godot debug session. |
 | `get_debug_state_events` | Advanced | Read recorded debugger break/resume/stop state transitions from the bridge. |
 | `get_debug_output` | Advanced | Read categorized runtime debugger output captured by the editor bridge. |
