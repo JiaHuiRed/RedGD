@@ -867,6 +867,15 @@ func get_registered_tools() -> Array:
 
 func set_tool_enabled(tool_name: String, enabled: bool) -> void:
 	if _tools.has(tool_name):
+		# Always-on meta tools (discovery/activation) can never be disabled, regardless of
+		# the caller (UI toggle, preset apply, or restored persisted state). This enforces
+		# the "always enabled" invariant at the system level, not just in the meta-tool path.
+		if not enabled and _is_always_on_tool(tool_name):
+			if not _tools[tool_name].enabled:
+				_tools[tool_name].enabled = true
+				_tool_list_dirty = true
+			_log_debug("Ignoring request to disable always-on meta tool: " + tool_name)
+			return
 		_tools[tool_name].enabled = enabled
 		_tool_list_dirty = true
 		if enabled:
@@ -877,12 +886,21 @@ func set_tool_enabled(tool_name: String, enabled: bool) -> void:
 		if enabled:
 			_log_warn("Cannot enable unregistered tool: " + tool_name)
 
+func _is_always_on_tool(tool_name: String) -> bool:
+	var classifier = get_classifier()
+	if classifier and classifier.has_method("is_meta_tool"):
+		return classifier.is_meta_tool(tool_name)
+	return false
+
 func set_group_enabled(group_name: String, enabled: bool) -> int:
 	if _classifier == null:
 		_classifier = load("res://addons/godot_mcp/native_mcp/mcp_tool_classifier.gd").new()
 	var group_tools: Array[String] = _classifier.get_group_tools(group_name)
 	var changed_count: int = 0
 	for tool_name in group_tools:
+		# Never disable always-on meta tools, even if the 'Meta' group is toggled off.
+		if not enabled and _is_always_on_tool(tool_name):
+			continue
 		if _tools.has(tool_name) and _tools[tool_name].enabled != enabled:
 			_tools[tool_name].enabled = enabled
 			changed_count += 1

@@ -14,7 +14,7 @@ description — in the category page it belongs to.
 | Editor | 23 | 4 | 19 | [editor-tools.md](editor-tools.md) |
 | Debug & Runtime | 71 | 3 | 68 | [debug-tools.md](debug-tools.md) |
 | Project | 53 | 3 | 50 | [project-tools.md](project-tools.md) |
-| Meta | 2 | — | — | [Meta tools](#meta-tools-tool-discovery) |
+| Meta | 2 | — | — | [meta-tools.md](meta-tools.md) |
 | **Total** | **204** | **30** | **172** | |
 
 (The 2 Meta tools are always-on and counted separately from the 30 core / 172 advanced split.)
@@ -32,7 +32,7 @@ single source of truth for the tables above.
   for the model.
 - **Meta** — 2 always-on tools (`list_tool_catalog`, `enable_tools`) that are never hidden,
   not even by the `minimal_core` preset, so the model can always discover and switch on more
-  capabilities on demand. See [Meta tools](#meta-tools-tool-discovery).
+  capabilities on demand. See [meta-tools.md](meta-tools.md).
 
 ## Meta tools (tool discovery)
 
