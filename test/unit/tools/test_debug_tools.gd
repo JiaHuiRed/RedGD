@@ -39,6 +39,15 @@ class FakeRuntimeBridge:
 			return latest_payload
 		return null
 
+	var output_events: Array = []
+
+	func get_output_events(count: int = 100, offset: int = 0, order: String = "desc", category: String = "") -> Dictionary:
+		var events: Array = []
+		for entry in output_events:
+			if category.is_empty() or str(entry.get("category", "")) == category:
+				events.append(entry.duplicate(true))
+		return {"events": events, "count": events.size(), "total_available": events.size()}
+
 class FakeRuntimePlugin:
 	extends RefCounted
 
@@ -468,3 +477,72 @@ func test_play_and_verify_requires_running_session():
 	var result: Dictionary = await tool._tool_play_and_verify({"steps": [], "assertions": []})
 	assert_has(result, "error", "Should return an error without a running session")
 	assert_true(str(result.get("error", "")).contains("runtime probe"), "Error should guide user to install the runtime probe")
+
+# --- play_and_verify runtime-error capture tests ---
+
+func test_filter_runtime_error_events_filters_by_sequence():
+	"""Only output events newer than the baseline sequence should be returned"""
+	var tool = load("res://addons/godot_mcp/tools/debug_tools_native.gd").new()
+	var events: Array = [
+		{"sequence": 5, "category": "stderr", "message": "old error"},
+		{"sequence": 11, "category": "stderr", "message": "new error"}
+	]
+	var collected: Array = tool._filter_runtime_error_events(events, 10, ["stderr"])
+	assert_eq(collected.size(), 1, "Only the event after the baseline should be collected")
+	assert_eq(str(collected[0].get("message", "")), "new error", "Collected event should be the post-baseline one")
+
+func test_filter_runtime_error_events_filters_by_category():
+	"""Events whose category is not in the requested set should be ignored"""
+	var tool = load("res://addons/godot_mcp/tools/debug_tools_native.gd").new()
+	var events: Array = [
+		{"sequence": 20, "category": "stdout", "message": "just a print"},
+		{"sequence": 21, "category": "stderr", "message": "a real error"}
+	]
+	var collected: Array = tool._filter_runtime_error_events(events, 0, ["stderr"])
+	assert_eq(collected.size(), 1, "Only stderr events should be collected")
+	assert_eq(str(collected[0].get("category", "")), "stderr", "Collected event should be stderr")
+
+func test_filter_runtime_error_events_normalizes_fields():
+	"""Collected errors should expose stable normalized fields"""
+	var tool = load("res://addons/godot_mcp/tools/debug_tools_native.gd").new()
+	var events: Array = [
+		{"sequence": 3, "category": "stderr", "message": "boom", "file": "res://p.gd", "line": 42, "function": "_ready"}
+	]
+	var collected: Array = tool._filter_runtime_error_events(events, 0, ["stderr"])
+	assert_eq(collected.size(), 1, "Single matching event should be collected")
+	var first: Dictionary = collected[0]
+	assert_eq(str(first.get("file", "")), "res://p.gd", "File should be preserved")
+	assert_eq(int(first.get("line", 0)), 42, "Line should be preserved")
+	assert_eq(str(first.get("function", "")), "_ready", "Function should be preserved")
+
+func test_filter_runtime_error_events_empty_when_none_match():
+	"""No matching events should yield an empty array"""
+	var tool = load("res://addons/godot_mcp/tools/debug_tools_native.gd").new()
+	var collected: Array = tool._filter_runtime_error_events([], 0, ["stderr"])
+	assert_eq(collected.size(), 0, "Empty input should produce no collected errors")
+
+func test_play_and_verify_fails_on_runtime_error_by_default():
+	"""A runtime error captured during the run should fail the report by default"""
+	var tool = load("res://addons/godot_mcp/tools/debug_tools_native.gd").new()
+	_runtime_bridge = FakeRuntimeBridge.new()
+	_runtime_bridge.output_events = [
+		{"sequence": 9999, "category": "stderr", "message": "Invalid call. Nonexistent function 'foo'", "file": "res://x.gd", "line": 7, "function": "_process"}
+	]
+	Engine.set_meta("GodotMCPPlugin", FakeRuntimePlugin.new(_runtime_bridge))
+	var result: Dictionary = await tool._tool_play_and_verify({"steps": [], "assertions": []})
+	assert_false(bool(result.get("passed", true)), "Run should fail when a runtime error is captured")
+	assert_eq(str(result.get("status", "")), "failed", "Status should be 'failed' on captured runtime error")
+	assert_has(result, "runtime_errors", "Report should expose captured runtime_errors")
+	assert_eq((result.get("runtime_errors", []) as Array).size(), 1, "The single runtime error should be reported")
+
+func test_play_and_verify_can_ignore_runtime_errors():
+	"""fail_on_runtime_error=false should still report errors but not fail the run"""
+	var tool = load("res://addons/godot_mcp/tools/debug_tools_native.gd").new()
+	_runtime_bridge = FakeRuntimeBridge.new()
+	_runtime_bridge.output_events = [
+		{"sequence": 9999, "category": "stderr", "message": "some warning", "file": "res://y.gd", "line": 1, "function": "_ready"}
+	]
+	Engine.set_meta("GodotMCPPlugin", FakeRuntimePlugin.new(_runtime_bridge))
+	var result: Dictionary = await tool._tool_play_and_verify({"steps": [], "assertions": [], "fail_on_runtime_error": false})
+	assert_true(bool(result.get("passed", false)), "Run should pass when fail_on_runtime_error is false")
+	assert_eq((result.get("runtime_errors", []) as Array).size(), 1, "Captured errors should still be reported")
