@@ -51,11 +51,16 @@ Perform the task's action with the relevant tools:
 Bring the change to life: `play_and_verify` (runs the scene and applies input
 steps) or `run_project_test` / `run_project_tests` for logic. For edit-time
 checks use `validate_script` and `detect_broken_scripts` first to fail fast.
+For gameplay/feel checks set `play_and_verify(deterministic=true)` so input steps
+advance exact physics frames (reproducible, fps-independent) and use `sample` to
+capture a per-frame `trajectory` + `metrics` in the same call.
 
 ### 4. VERIFY
 Check the task's `done_when` using assertions:
 - Runtime metrics → `assert_runtime_condition`, `await_runtime_condition`,
-  `evaluate_runtime_expression`, `get_runtime_scene_tree`.
+  `evaluate_runtime_expression`, `get_runtime_scene_tree`, or `play_and_verify`
+  trajectory `metrics` asserted via `{metric, aggregate, operator, expected}`
+  (e.g. jump height = `metrics.y.min`, time-to-apex = `metrics.y.min_time`).
 - Tests → `run_project_tests` (expect 0 failures).
 - Visuals → `get_editor_screenshot` + `compare_render_screenshots`.
 

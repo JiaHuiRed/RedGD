@@ -34,15 +34,20 @@ Each metric becomes one or more assertions. Conceptual mapping (exact tool
 arguments depend on your scene):
 
 ```
-# Jump height — inject input, then assert the peak rise.
+# Jump height — frame-step the jump deterministically, sample the player's Y
+# each physics frame, then assert on the resulting trajectory metric.
 play_and_verify(
-  scene = "res://player/player.tscn",
-  steps = [ press("jump"), wait(0.4) ],
+  deterministic = true,                 # wait_frames steps exact physics frames
+  sample = [ {expression="position.y", node_path="Player", label="y"} ],
+  steps = [ press("jump"), {wait_frames=24} ],   # ~0.4s at 60 Hz
   assertions = [
-    # player rose at least (h - tolerance) pixels from start
-    "start_y - min_y >= 88"
+    # peak rise: lowest Y reached is at least 88px above the start (Y is up-negative)
+    {metric="y", aggregate="min", operator="lte", expected=-88}
   ]
 )
+# The report returns metrics.y = {min, max, first, last, delta, min_frame,
+# min_time, ...}; min_time is the time-to-apex. Runs are reproducible because
+# timing is counted in frames, not wall-clock.
 
 # Coyote time — walk off a ledge, wait < t_coyote, jump must still work.
 await_runtime_condition("player.is_on_floor() == false")
