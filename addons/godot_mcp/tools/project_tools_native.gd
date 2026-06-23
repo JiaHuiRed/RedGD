@@ -7109,13 +7109,13 @@ func _tool_inspect_gltf_asset(params: Dictionary) -> Dictionary:
 
 	var material_names: Array = []
 	for mat in materials:
-		if include_names and mat != null:
-			material_names.append(mat.resource_name)
+		if include_names:
+			material_names.append(mat.resource_name if mat != null else "")
 
 	var animation_names: Array = []
 	for anim in animations:
-		if include_names and anim != null:
-			animation_names.append(anim.get_original_name())
+		if include_names:
+			animation_names.append(anim.get_original_name() if anim != null else "")
 
 	if materials.is_empty() and not meshes.is_empty():
 		meshes_without_material = meshes.size()
