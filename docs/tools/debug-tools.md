@@ -46,7 +46,7 @@ Debug edit-time logs and debugger sessions, then inspect and control a running g
 | `inspect_runtime_node` | advanced | Inspect a node in the running game. |
 | `update_runtime_node_property` | advanced | Update a node property in the running game. |
 | `call_runtime_node_method` | advanced | Call a method on a node in the running game. |
-| `evaluate_runtime_expression` | advanced | Evaluate an expression in the running game context. |
+| `evaluate_runtime_expression` | advanced | Evaluate an expression in the running game context. Guarded by the script sandbox under STRICT security. |
 | `await_runtime_condition` | advanced | Wait for a condition to be true in the running game. |
 | `assert_runtime_condition` | advanced | Assert a condition in the running game. |
 | `play_and_verify` | advanced | Drive the running game through a scripted sequence of input steps (with optional waits and screenshots), then evaluate a batch of runtime assertions, returning a single pass/fail report. Set deterministic=true to make per-step 'wait_frames' advance an exact number of physics frames inside the game (frame-stepped, fps-independent and reproducible) instead of a wall-clock approximation; combine with 'sample' to record a frame-indexed trajectory and per-label 'metrics' (min/max/first/last/delta/peak frame+time) for measuring game feel, and assert on them via {metric, aggregate, operator, expected}. Runtime errors the game emits during the run are captured via the debugger bridge and (by default) fail the report. Requires the game to be running with the runtime probe installed. |
@@ -58,7 +58,7 @@ Debug edit-time logs and debugger sessions, then inspect and control a running g
 | `get_debug_scopes` | advanced | Group latest captured stack variables into DAP-like scopes for a frame. |
 | `get_debug_variables` | advanced | Resolve a DAP-style variablesReference into child variables, with optional pagination for large arrays and dictionaries. |
 | `expand_debug_variable` | advanced | Expand a captured debug variable or evaluated expression value by scope and path, with pagination for arrays and dictionaries. |
-| `evaluate_debug_expression` | advanced | Evaluate an expression in the paused script debugger context for a given frame. |
+| `evaluate_debug_expression` | advanced | Evaluate an expression in the paused script debugger context for a given frame. Guarded by the script sandbox under STRICT security. |
 | `debug_step_into` | advanced | Step into the next function call in the debugger. |
 | `debug_step_over` | advanced | Step over the next line in the debugger. |
 | `debug_step_out` | advanced | Step out of the current function in the debugger. |

@@ -4,6 +4,7 @@ All notable user-facing changes are tracked here.
 
 ## Unreleased
 
+- Added a script sandbox guard for `execute_editor_script`, `evaluate_debug_expression` and `evaluate_runtime_expression`: under STRICT `security_level` (the default), scripts/expressions are scanned by a configurable capability denylist (OS process execution, out-of-project filesystem paths, networking, other dangerous APIs) and rejected with a structured `blocked` result before execution. PERMISSIVE mode keeps the previous unrestricted behavior. No new MCP tool is added; the guard hardens existing tools and the catalog stays at 215 tools.
 - Expanded the MCP tool catalog to 215 tools by adding the ship-loop closure and localization tools.
 - Added `smoke_test_export` (Editor-Advanced): post-export smoke test that resolves the artifact, optionally exports first, asserts the product file exists, and launches it to capture and check the exit code — an objective, runnable-build gate.
 - Added `bump_version` (Project-Advanced): semantic version bump written back to project.godot plus an automatic dated changelog entry, with a `dry_run` mode.
