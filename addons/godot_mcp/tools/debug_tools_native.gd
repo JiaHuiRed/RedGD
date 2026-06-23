@@ -24,6 +24,13 @@ func _get_editor_interface() -> EditorInterface:
 			return plugin.get_editor_interface()
 	return null
 
+# 沙箱护栏配置：默认跟随 security_level（STRICT -> 开启）。取不到时默认安全（开启）。
+func _sandbox_config() -> Dictionary:
+	var strict: bool = true
+	if _server_core and _server_core.has_method("get_security_level"):
+		strict = int(_server_core.get_security_level()) == MCPTypes.SecurityLevel.STRICT
+	return {"enabled": strict}
+
 func _get_user_scene_root() -> Node:
 	var editor_interface: EditorInterface = _get_editor_interface()
 	if not editor_interface:
@@ -836,6 +843,9 @@ func _tool_evaluate_debug_expression(params: Dictionary) -> Dictionary:
 	var expression: String = str(params.get("expression", "")).strip_edges()
 	if expression.is_empty():
 		return {"error": "Missing required parameter: expression"}
+	var guard: Dictionary = MCPScriptSandbox.scan(expression, _sandbox_config())
+	if guard.get("blocked", false):
+		return {"error": guard.get("error", "blocked by script sandbox"), "blocked": true, "reason": guard.get("reason", ""), "category": guard.get("category", "")}
 	var frame: int = max(0, int(params.get("frame", 0)))
 	var bridge: RefCounted = _get_debugger_bridge()
 	if not bridge:
@@ -2019,6 +2029,9 @@ func _tool_evaluate_runtime_expression(params: Dictionary) -> Dictionary:
 	var expression: String = params.get("expression", "")
 	if expression.is_empty():
 		return {"error": "Missing required parameter: expression"}
+	var guard: Dictionary = MCPScriptSandbox.scan(expression, _sandbox_config())
+	if guard.get("blocked", false):
+		return {"error": guard.get("error", "blocked by script sandbox"), "blocked": true, "reason": guard.get("reason", ""), "category": guard.get("category", "")}
 	var payload: Array = [expression, params.get("node_path", "")]
 	return await _request_runtime_probe_poll("evaluate_expression", payload, ["mcp:expression_result"], params, {"expression": expression})
 
@@ -3984,6 +3997,10 @@ func _tool_execute_editor_script(params: Dictionary) -> Dictionary:
 	var code: String = params.get("code", "")
 	if code.is_empty():
 		return {"success": false, "error": "Missing required parameter: code", "output": []}
+
+	var guard: Dictionary = MCPScriptSandbox.scan(code, _sandbox_config())
+	if guard.get("blocked", false):
+		return {"success": false, "error": guard.get("error", "blocked by script sandbox"), "output": [], "blocked": true, "reason": guard.get("reason", ""), "category": guard.get("category", "")}
 
 	var editor_interface: EditorInterface = _get_editor_interface()
 	if not editor_interface:

@@ -1108,6 +1108,9 @@ func set_security_level(level: int) -> void:
 	_security_level = level
 	_log_info("Security level set to: " + str(level))
 
+func get_security_level() -> int:
+	return _security_level
+
 func set_rate_limit(limit: int) -> void:
 	_rate_limit = limit
 	_log_info("Rate limit set to: " + str(limit) + " requests/minute")
