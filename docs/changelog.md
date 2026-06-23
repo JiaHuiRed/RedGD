@@ -4,6 +4,7 @@ All notable user-facing changes are tracked here.
 
 ## Unreleased
 
+- Closed a script-sandbox bypass and reduced false positives: `execute_script`'s single-line Expression path is now scanned by the same guard (previously only the multi-line/`execute_editor_script` path was), so a single-line `OS.execute(...)` can no longer slip through under STRICT security. The filesystem check no longer flags Godot scene-tree node paths (`/root/...`) and only treats `~`/`~/` as a home-dir path instead of matching any string containing a tilde (e.g. `"~5 enemies"`); out-of-project absolute and system paths (`/etc/`, `/var/`, drive letters, `~/...`) stay blocked.
 - Added a script sandbox guard for `execute_editor_script`, `evaluate_debug_expression` and `evaluate_runtime_expression`: under STRICT `security_level` (the default), scripts/expressions are scanned by a configurable capability denylist (OS process execution, out-of-project filesystem paths, networking, other dangerous APIs) and rejected with a structured `blocked` result before execution. PERMISSIVE mode keeps the previous unrestricted behavior. No new MCP tool is added; the guard hardens existing tools and the catalog stays at 215 tools.
 - Expanded the MCP tool catalog to 215 tools by adding the ship-loop closure and localization tools.
 - Added `smoke_test_export` (Editor-Advanced): post-export smoke test that resolves the artifact, optionally exports first, asserts the product file exists, and launches it to capture and check the exit code — an objective, runnable-build gate.
