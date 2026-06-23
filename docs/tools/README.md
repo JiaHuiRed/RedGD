@@ -1,10 +1,8 @@
 # Tools Reference
 
-The plugin exposes **211 MCP tools** to connected AI clients: 6 functional categories plus
-a small always-on **Meta** group for tool discovery. Every tool is listed — with its tier and
-description — in the category page it belongs to.
+Godot MCP Native registers **211 MCP tools**: 30 core tools, 179 advanced tools and 2 always-on meta tools. The classifier in `addons/godot_mcp/native_mcp/mcp_tool_classifier.gd` is the source of truth for tier and group membership.
 
-## Categories
+## Category summary
 
 | Category | Tools | Core | Advanced | Page |
 | --- | ---: | ---: | ---: | --- |
@@ -17,69 +15,58 @@ description — in the category page it belongs to.
 | Meta | 2 | — | — | [meta-tools.md](meta-tools.md) |
 | **Total** | **211** | **30** | **179** | |
 
-(The 2 Meta tools are always-on and counted separately from the 30 core / 179 advanced split.)
+Meta tools are counted separately because they are always enabled and exist to manage the visible tool surface.
 
-## Core vs. advanced
+## Core vs advanced
 
-Tools are classified by `addons/godot_mcp/native_mcp/mcp_tool_classifier.gd`, which is the
-single source of truth for the tables above.
+- **Core** tools are enabled on startup and returned by `tools/list` immediately.
+- **Advanced** tools are registered but disabled by default, then enabled from the MCP panel or with `enable_tools`.
+- **Meta** tools (`list_tool_catalog`, `enable_tools`) are always available, including in minimal presets.
 
-- **Core** — the 30 highest-value tools. They are enabled automatically and returned by
-  `tools/list` as soon as the server starts. The cap is `CORE_MAX_COUNT = 30`.
-- **Advanced** — the remaining 179 tools. They are registered but **disabled by default**
-  (`enabled = (category == "core" or category == "meta")`), so they are hidden from
-  `tools/list` until you turn them on. This keeps the default tool surface small and focused
-  for the model.
-- **Meta** — 2 always-on tools (`list_tool_catalog`, `enable_tools`) that are never hidden,
-  not even by the `minimal_core` preset, so the model can always discover and switch on more
-  capabilities on demand. See [meta-tools.md](meta-tools.md).
+This keeps the initial tool list small enough for AI clients while preserving access to specialized editor/runtime capabilities.
 
-## Meta tools (tool discovery)
+## Discovery workflow
 
-The **Meta** group is the key to keeping `tools/list` small without losing access to the full
-toolset. Both tools have `category = "meta"`, are always enabled, and survive every preset.
+1. Start with core tools and meta tools.
+2. Call `list_tool_catalog` with a `group` or `query` filter to inspect available tools.
+3. Call `enable_tools` with explicit `tools`, `groups` or a preset.
+4. Wait for `notifications/tools/list_changed` and let the client refresh.
+5. Disable advanced groups when the task is complete if you want to shrink the tool surface again.
 
-| Tool | What it does |
-| --- | --- |
-| `list_tool_catalog` | Lists registered tools grouped by category, with a one-line description and each tool's enabled state — **without** loading every full schema. Filter by `group` or `query`, or pass `enabled_only` / `include_descriptions` to shrink the response. |
-| `enable_tools` | Enables/disables tools on demand. Pass `tools` and/or `groups` (with `enabled`, and optional `exclusive` to reset to a core-only baseline first), or `preset` to apply a curated profile wholesale. Emits `notifications/tools/list_changed` so the client refreshes its tool list. Core and meta tools always stay enabled. |
+Example:
 
-**Lazy-loading workflow:** start from `minimal_core` (≈32 visible tools) → call
-`list_tool_catalog({group: "Debug-Advanced"})` to discover what's available →
-`enable_tools({groups: ["Debug-Advanced"]})` (or `enable_tools({preset: "debugging"})`) to
-switch them on. This keeps the steady-state context to just the core tools plus the catalog
-tool, minimising token/compute cost. See also the
-[task → preset guide](../configuration.md#tool-presets).
+```json
+{
+  "name": "enable_tools",
+  "arguments": {
+    "groups": ["Debug-Advanced"],
+    "enabled": true
+  }
+}
+```
 
-**Delivered automatically on connect.** The server returns this workflow in the MCP
-`initialize` response's `instructions` field, so compatible clients inject it into the model's
-system context the moment it connects — no manual prompt or rule file needed. (Clients that
-ignore `instructions` simply don't get the hint; the tools still work the same way.)
+## Category pages
 
-### Enabling advanced tools
+Each category page lists every tool with tier and description:
 
-- **In the editor:** open the **MCP** dock panel, expand a tool group, and toggle the tools
-  you want. Selections are grouped so you can enable a whole group at once.
-- **In tests / scripts:** call `core.set_tool_enabled("tool_name", true)` on the server core.
+- [Node Tools](node-tools.md)
+- [Script Tools](script-tools.md)
+- [Scene Tools](scene-tools.md)
+- [Editor Tools](editor-tools.md)
+- [Debug & Runtime Tools](debug-tools.md)
+- [Project Tools](project-tools.md)
+- [Meta Tools](meta-tools.md)
 
-## Naming
-
-Tool names use `snake_case` (for example `create_node`, `get_runtime_scene_tree`). Some
-clients surface a kebab-case alias in their UI; the wire protocol always uses the
-`snake_case` name shown in these tables.
-
-## How tools are organised internally
-
-Each category maps to one implementation file under `addons/godot_mcp/tools/`:
+## Implementation map
 
 | Category | Implementation file |
 | --- | --- |
-| Node | `node_tools_native.gd` |
-| Script | `script_tools_native.gd` |
-| Scene | `scene_tools_native.gd` |
-| Editor | `editor_tools_native.gd` |
-| Debug & Runtime | `debug_tools_native.gd` |
-| Meta | `meta_tools_native.gd` |
-| Project | `project_tools_native.gd` |
+| Node | `addons/godot_mcp/tools/node_tools_native.gd` |
+| Script | `addons/godot_mcp/tools/script_tools_native.gd` |
+| Scene | `addons/godot_mcp/tools/scene_tools_native.gd` |
+| Editor | `addons/godot_mcp/tools/editor_tools_native.gd` |
+| Debug & Runtime | `addons/godot_mcp/tools/debug_tools_native.gd` |
+| Project | `addons/godot_mcp/tools/project_tools_native.gd` |
+| Meta | `addons/godot_mcp/tools/meta_tools_native.gd` |
 
-To add a new tool, follow [Contributing → Adding a tool](../contributing.md#adding-a-new-tool).
+To add or change a tool, follow [Contributing → Adding a new MCP tool](../contributing.md#adding-a-new-mcp-tool).

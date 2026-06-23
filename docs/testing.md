@@ -1,54 +1,83 @@
 # Testing
 
-The project ships two complementary test suites:
-
-| Suite | Location | Framework | What it covers |
-| --- | --- | --- | --- |
-| Unit | `test/unit/` | [GUT](https://github.com/bitwes/Gut) | Tool logic, parsing, parsers, UI helpers — in isolation. |
-| Integration | `test/integration/` | Python | End-to-end flows that drive a real editor over HTTP MCP. |
-
-Both suites are expected to pass with **zero failures** before a change is merged.
+Use the lightest test that proves the change, then run broader suites before merging code changes.
 
 ## Unit tests (GUT)
 
-Unit tests run headlessly through GUT's command-line runner. GUT must be installed in the
-project (`addons/gut/`).
+Unit tests live under `test/unit/`. Tool-specific tests usually live under `test/unit/tools/`.
+
+Typical command shape:
 
 ```bash
-godot --headless --path . \
-  -s addons/gut/gut_cmdln.gd \
-  -gdir=res://test/unit/ -ginclude_subdirs -gexit
+godot --headless --path . -s addons/gut/gut_cmdln.gd -gdir=res://test/unit/ -ginclude_subdirs -gexit
 ```
 
-Layout under `test/unit/`:
+Notes:
 
-- `tools/` — per-tool tests (with `fixtures/` for sample scenes/scripts).
-- `ui/` — dock-panel and tool-item UI behaviour.
-- `helpers/` — shared test utilities.
-
-Conventions (see [Contributing](contributing.md)):
-
-- Test files use `extends "res://addons/gut/test.gd"` — **not** `class_name` (a GUT CLI limit).
-- Cover the happy path, edge cases, and error handling for every change.
+- GUT is required for this command.
+- Test files should extend `res://addons/gut/test.gd` and should not declare `class_name`.
+- Cover happy paths, invalid arguments, edge cases and changed error behavior.
 
 ## Integration tests (Python)
 
-Integration tests launch Godot, start the HTTP MCP server (default port `9080`), and call
-tools over the wire to verify complete flows (batch edits, debugger control, export tools,
-resource dependency scans, runtime-probe interactions, and more).
+Integration tests live under `test/integration/` and exercise the HTTP MCP server against a running/editor Godot instance.
+
+Typical flow:
+
+1. Start Godot with the MCP server enabled.
+2. Ensure the server listens on `http://127.0.0.1:9080/mcp`.
+3. Run the target Python test:
 
 ```bash
-cd test/integration
-python test_runtime_probe_flow.py
+python test/integration/test_runtime_probe_flow.py
 ```
 
-Each `test_*_flow.py` script is self-contained and can be run individually. They require a
-Godot executable available to launch the editor headlessly and Python 3.8+.
+Integration tests are useful for transport behavior, runtime probe workflows, editor automation, imports/exports and project-level side effects.
 
-## Tips
+## Static checks
 
-- When iterating on a single tool, run just its unit test file with `-gtest=res://test/unit/tools/<file>.gd`.
-- Advanced tools are disabled by default; tests enable the tool under test explicitly via
-  `core.set_tool_enabled("<tool>", true)`.
-- Clean up generated artifacts after integration runs (temporary `.tmp_*` folders) so they
-  don't leak into later runs.
+The repository includes focused static checks such as:
+
+```bash
+python test/quiet_mode_static_check.py
+```
+
+Use them when the touched code path is relevant.
+
+## Manual MCP smoke test
+
+For local diagnosis, call the HTTP endpoint directly:
+
+```bash
+curl -s \
+  -H "Content-Type: application/json" \
+  -X POST http://127.0.0.1:9080/mcp \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+```
+
+Tool call payloads use `params.arguments`:
+
+```bash
+curl -s \
+  -H "Content-Type: application/json" \
+  -X POST http://127.0.0.1:9080/mcp \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_project_info","arguments":{}}}'
+```
+
+## What to run by change type
+
+| Change | Minimum validation |
+| --- | --- |
+| Documentation only | Markdown/link checks and JSON example validation. |
+| Tool schema or handler | Targeted unit tests plus tool registration/classification checks. |
+| Runtime probe | Relevant runtime integration test plus unit tests for payload parsing. |
+| UI/panel behavior | Targeted unit tests plus manual editor smoke test. |
+| Transport/auth | HTTP/stdio/auth tests and direct curl smoke test. |
+| Export/import/project resources | Targeted integration test and filesystem side-effect inspection. |
+
+## Test data hygiene
+
+- Prefer writing temporary resources under test-specific paths.
+- Clean up generated files or keep them in ignored test output directories.
+- Do not commit local `user://` settings, tokens or editor cache files.
+- Avoid modifying generated `.uid` files by hand.

@@ -1,156 +1,176 @@
 # Getting Started
 
-This guide takes you from an empty editor to an AI client calling a tool against your
-project — usually in under ten minutes.
+This guide takes a fresh Godot project from install to a working MCP connection.
 
 ## 1. Requirements
 
-| Requirement | Notes |
-| --- | --- |
-| Godot Engine 4.7 | GL Compatibility renderer; 4.7+ recommended. |
-| An MCP-capable AI client | Claude Desktop, Cursor, Trae, Cline, OpenCode, Codex, … |
-| `npx` / Node (optional) | Only needed for clients that connect through `mcp-remote`. |
-| Python 3.8+ (optional) | Only for running the integration test suite. |
-
-No runtime dependencies are required to *use* the plugin — the server is pure GDScript.
+- Godot Engine 4.7 with the GL Compatibility renderer.
+- A project where editor plugins can be enabled.
+- An MCP client such as Claude Desktop, Cursor, Trae, Cline, OpenCode, Codex or any generic MCP client.
+- Optional: `npx` if your client is stdio-only and must bridge to HTTP with `mcp-remote`.
 
 ## 2. Install the plugin
 
-### Option A — Asset Library (recommended)
+### Option A — Asset Library
 
-1. Open your project in Godot.
-2. Go to the **AssetLib** tab.
-3. Search for **"Godot MCP Native"**, then **Download** and **Install**.
+1. Open **AssetLib** in Godot.
+2. Search for **Godot MCP Native**.
+3. Click **Download → Install**.
+4. Leave `addons/godot_mcp` selected when Godot asks which files to install.
 
-### Option B — Manual
+### Option B — Manual copy
 
-1. Clone or download this repository.
-2. Copy the `addons/godot_mcp` folder into your project's `addons/` directory.
-3. Reopen the project in Godot.
+Copy this repository's `addons/godot_mcp` folder into your project's `addons/` directory:
+
+```text
+your-project/
+└── addons/
+    └── godot_mcp/
+        ├── plugin.cfg
+        ├── mcp_server_native.gd
+        └── ...
+```
 
 ## 3. Enable the plugin
 
 1. Open **Project → Project Settings → Plugins**.
-2. Find **Godot MCP Native** and set its status to **Enable**.
+2. Enable **Godot MCP Native**.
+3. Confirm that an **MCP** dock appears in the editor.
 
-A new **MCP** dock panel appears. From it you can start/stop the server, switch transport
-mode, manage authentication, browse logs, and enable individual tools.
+If the panel does not appear, close and reopen the project, then check the Output panel for plugin load errors.
 
 ## 4. Start the server
 
-In the **MCP** panel:
+1. Open the **MCP** dock.
+2. Use the default transport, **HTTP**.
+3. Keep the default port, `9080`, unless another process already uses it.
+4. Click **Start Server**.
 
-1. Choose a transport mode (**HTTP** is the default and works with every client below).
-2. Confirm the port (default **`9080`**).
-3. Click **Start**.
+The local endpoint is:
 
-The server now listens on `http://localhost:9080/mcp`. See [Configuration](configuration.md)
-for authentication, SSE, the stdio transport, headless launch, and CLI flags.
+```text
+http://localhost:9080/mcp
+```
+
+To start automatically from a script or headless editor session:
+
+```bash
+godot --editor --path /absolute/path/to/project -- --mcp-server --mcp-port=9080
+```
 
 ## 5. Connect an AI client
 
-All snippets assume HTTP mode on the default port. For authentication and other transports,
-see [Configuration → Client configuration](configuration.md#client-configuration).
+### Direct HTTP clients: Cursor, Trae, Cline, OpenCode, Codex and generic MCP clients
 
-> Tip: instead of copying the snippets below by hand, use the **Copy Config** menu in the
-> panel's status bar — it builds the HTTP or stdio configuration for you with the current
-> port and auth token filled in. See
-> [Configuration → Generate snippets from the panel](configuration.md#generate-snippets-from-the-panel).
-
-### Claude Desktop
-
-Claude Desktop connects through the `mcp-remote` bridge:
-
-```bash
-npm install mcp-remote
-```
+Use the URL form when the client supports HTTP MCP servers:
 
 ```json
 {
   "mcpServers": {
     "godot-mcp": {
-      "command": "npx",
-      "args": ["mcp-remote", "http://localhost:9080/mcp"]
+      "url": "http://localhost:9080/mcp"
     }
   }
 }
 ```
 
-### Cursor / Trae
-
-```json
-{
-  "mcpServers": {
-    "godot-mcp": { "url": "http://localhost:9080/mcp" }
-  }
-}
-```
-
-### Cline
+If auth is enabled in the MCP panel, include the Bearer token:
 
 ```json
 {
   "mcpServers": {
     "godot-mcp": {
       "url": "http://localhost:9080/mcp",
-      "type": "streamableHttp",
-      "disabled": false,
-      "autoApprove": []
+      "headers": {
+        "Authorization": "Bearer your-secret-token-here"
+      }
     }
   }
 }
 ```
 
-### OpenCode
+### Claude Desktop and other stdio-only clients
+
+Use `mcp-remote` to bridge stdio to the HTTP endpoint:
 
 ```json
 {
-  "mcp": {
-    "godot-mcp": { "type": "remote", "url": "http://localhost:9080/mcp" }
+  "mcpServers": {
+    "godot-mcp": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "http://localhost:9080/mcp"
+      ]
+    }
   }
 }
 ```
 
-### Codex
+For a pure stdio Godot process, launch Godot as the MCP server process:
 
-```toml
-[mcp_servers.godot-mcp]
-type = "streamableHttp"
-url = "http://localhost:9080/mcp"
+```json
+{
+  "mcpServers": {
+    "godot-mcp": {
+      "command": "path/to/godot",
+      "args": [
+        "--editor",
+        "--headless",
+        "--path",
+        "/absolute/path/to/your/godot/project",
+        "--",
+        "--mcp-server",
+        "--mcp-transport=stdio"
+      ]
+    }
+  }
+}
 ```
 
-## 6. Make your first call
+## 6. Verify the connection
 
-Ask your AI client something that maps to a core tool, for example:
+Ask your assistant:
 
-> "Get the Godot project info."
+```text
+Get the Godot project info.
+```
 
-The client should call `get_project_info` and return the project name, version and
-description. From there you can drive the editor in natural language:
+A healthy connection returns a result from `get_project_info` containing the project name and metadata.
 
-> "Add a `Camera2D` to the current scene and centre it on the player."
->
-> "Read my player movement script and suggest improvements."
->
-> "Create a main menu scene with Play, Options and Quit buttons."
+Then try a read-only prompt:
 
-Only the 30 **core** tools (plus 2 always-on **meta** tools) are available immediately. To
-unlock the other 179, enable them in the MCP panel — or let the AI do it on demand via the
-`list_tool_catalog` / `enable_tools` meta tools. See the
-[Tools Reference](tools/README.md#enabling-advanced-tools) and
-[Meta tools](tools/README.md#meta-tools-tool-discovery).
+```text
+List the current scene tree and summarize the top-level nodes.
+```
+
+## 7. Enable advanced tools only when needed
+
+At startup, the client sees the 30 core tools plus 2 meta tools. For specialized workflows:
+
+- In the editor, open the tool manager in the MCP panel and toggle a group.
+- From the client, call `list_tool_catalog` to discover tools and `enable_tools` to enable names, groups or presets.
+
+Example workflow:
+
+```text
+Use list_tool_catalog to show Debug-Advanced tools, then enable the debugging preset.
+```
 
 ## Troubleshooting
 
-| Symptom | Fix |
+| Symptom | Check |
 | --- | --- |
-| Plugin missing from the editor | Re-check **Project Settings → Plugins**; confirm `addons/godot_mcp` exists; restart Godot. |
-| Server won't start — port in use | Change the port in the MCP panel, or free `9080` (`netstat -ano \| findstr :9080` on Windows, `lsof -i :9080` on macOS/Linux). |
-| `401 Unauthorized` | Auth is enabled — send `Authorization: Bearer <token>` and make sure the token matches the panel. |
-| Client sees no tools | The tool may be **advanced** and disabled by default — enable it in the MCP panel. |
+| Client cannot connect | Confirm the MCP panel says the server is running and that the client URL ends with `/mcp`. |
+| Port is busy | Change `http_port` in the panel or launch with `--mcp-port=<port>`. |
+| Auth errors | Disable auth temporarily or ensure the client sends `Authorization: Bearer <token>`. |
+| Advanced tool missing | Enable its group from the MCP panel or with `enable_tools`. |
+| stdio client cannot use HTTP URL | Use `mcp-remote` or launch Godot with `--mcp-transport=stdio`. |
+| Remote/cloud client cannot reach localhost | Use [Remote & Cloud Access](remote-access.md). |
 
 ## Next steps
 
-- [Configuration](configuration.md) — transports, auth, persistence, CLI flags.
-- [Tools Reference](tools/README.md) — every tool, by category.
-- [Architecture](architecture.md) — how it all fits together.
+- Review [Configuration](configuration.md) for auth, presets and CLI flags.
+- Browse [Tools Reference](tools/README.md) before granting broad advanced tool access.
+- Read [Testing](testing.md) if you plan to contribute code or tools.

@@ -1,92 +1,81 @@
-# Remote & cloud access
+# Remote & Cloud Access
 
-The MCP server runs **inside the Godot editor**, so it lives wherever the editor runs —
-usually `127.0.0.1:9080` on your workstation. You do not need to move it to a cloud host
-to let a remote teammate or a hosted AI client reach it. Instead, expose the local port
-through a **free tunnel**: the tunnel terminates a public HTTPS URL and forwards traffic
-to your local server. This is zero-cost, needs no server to maintain, and keeps the editor
-on the machine that owns the project.
+The MCP server starts on localhost by default. Remote access is only needed when the MCP client runs outside the same machine as Godot: a cloud IDE, another workstation, or a hosted AI tool.
 
-> **Security first.** A public URL means anyone who learns it can drive your editor. Before
-> exposing the server, enable **Bearer-token authentication** in the panel (Transport →
-> *Enable auth*) and treat the token like a password. See the [checklist](#security-checklist).
+## Mental model
 
-## How it fits together
-
-```
-AI client ──HTTPS──> tunnel edge ──encrypted tunnel──> cloudflared (your PC) ──> 127.0.0.1:9080
+```text
+Remote MCP client ── public HTTPS URL ── tunnel ── localhost:9080 ── Godot MCP server
 ```
 
-Because `cloudflared` (or any tunnel daemon) runs on the **same machine** as the editor, it
-connects to `127.0.0.1`. You therefore do **not** need to turn on *Allow remote* — leaving
-the server bound to localhost is fine and more secure; the tunnel is the only public ingress.
+The public URL should point to the local MCP endpoint with `/mcp` appended.
 
-## Option A — Built-in one-click tunnel (recommended, no account, no install)
+## Before exposing the server
 
-The panel can run a Cloudflare Quick Tunnel for you — you do **not** install anything by hand.
+1. Enable `auth_enabled` in the MCP panel.
+2. Set a long random `auth_token`.
+3. Keep `security_level = 1`.
+4. Enable only the advanced tool groups needed for the task.
+5. Stop the tunnel when the remote session is done.
 
-1. Start the MCP server in the panel (HTTP transport, port `9080`).
-2. Open **Settings → Remote / Cloud access** and click **Start free tunnel**.
-3. On first use the plugin downloads the official, version-pinned `cloudflared` binary for
-   your OS/architecture, **verifies its SHA-256 checksum**, and caches it under `user://`
-   (subsequent runs reuse it — no re-download). It then launches
-   `cloudflared tunnel --url http://localhost:<port>`.
-4. When the tunnel is live the public URL (e.g. `https://random-words-1234.trycloudflare.com`)
-   is detected automatically and filled into the **Public URL** field. Click *Copy HTTP config*
-   (or *Copy Claude (mcp-remote)*) for a ready-to-paste client config.
-5. Click **Stop tunnel** when done; the plugin also stops the tunnel when the editor closes.
+## Option A — Built-in Cloudflare Quick Tunnel
 
-> **Where the binary comes from.** The plugin fetches the official release from
-> `github.com/cloudflare/cloudflared/releases` at a pinned version and refuses to use the
-> file unless its SHA-256 matches the published checksum. Nothing is auto-updated. If you
-> prefer to manage the binary yourself, point the optional *cloudflared path* field at your
-> own install and the plugin will use it directly (offline-friendly).
+The MCP panel can manage a Cloudflare Quick Tunnel through `cloudflared`.
 
-### Manual fallback
+1. Start the local MCP server.
+2. Enable auth if the tunnel will be shared.
+3. Use the tunnel control in the MCP panel.
+4. Copy the generated `https://*.trycloudflare.com` URL.
+5. Configure the client with `<public-url>/mcp`.
 
-If you'd rather run it yourself, install `cloudflared`
-([downloads](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/))
-and run the command from the *Copy tunnel command* button (your current port is pre-filled):
-
-```bash
-cloudflared tunnel --url http://localhost:9080
-```
-
-Quick Tunnel URLs are **ephemeral** (they change each run). For a stable hostname, create a
-free Cloudflare account and a [named tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/).
-
-## Option B — Tailscale Funnel
-
-If your team already uses [Tailscale](https://tailscale.com/), `tailscale funnel 9080`
-publishes the local port on your tailnet's public HTTPS hostname. Good when you want the
-endpoint reachable only to a known group rather than the whole internet.
-
-## Option C — ngrok
-
-`ngrok http 9080` also works (free tier). URLs are ephemeral and rate-limited, and it
-requires a (free) account + authtoken.
-
-## Connecting clients to the public URL
-
-The panel generates both forms for you from the **Public URL** field:
-
-### URL-capable clients (Cursor, Cline, generic MCP)
+Example client config:
 
 ```json
 {
   "mcpServers": {
     "godot-mcp": {
-      "url": "https://your-tunnel.trycloudflare.com/mcp",
-      "headers": { "Authorization": "Bearer <your-token>" }
+      "url": "https://example.trycloudflare.com/mcp",
+      "headers": {
+        "Authorization": "Bearer your-secret-token-here"
+      }
     }
   }
 }
 ```
 
-### stdio-only clients (Claude Desktop)
+### Manual Cloudflare fallback
 
-Claude Desktop cannot open an HTTP MCP connection directly, so it uses the
-[`mcp-remote`](https://www.npmjs.com/package/mcp-remote) npm bridge (requires Node.js):
+If you manage `cloudflared` yourself:
+
+```bash
+cloudflared tunnel --url http://localhost:9080
+```
+
+Use the generated public base URL plus `/mcp`.
+
+## Option B — Tailscale Funnel
+
+Tailscale Funnel is useful when both machines are already in a Tailscale workflow.
+
+```bash
+tailscale funnel 9080
+```
+
+Then configure the client with the Funnel URL plus `/mcp` and the auth header.
+
+## Option C — ngrok
+
+ngrok works well for short-lived manual sessions:
+
+```bash
+ngrok http 9080
+```
+
+Use the HTTPS forwarding URL plus `/mcp`.
+
+## stdio-only clients over a public URL
+
+If the client only supports stdio but can run a local command, bridge with `mcp-remote`:
 
 ```json
 {
@@ -94,24 +83,30 @@ Claude Desktop cannot open an HTTP MCP connection directly, so it uses the
     "godot-mcp": {
       "command": "npx",
       "args": [
-        "-y", "mcp-remote", "https://your-tunnel.trycloudflare.com/mcp",
-        "--header", "Authorization: Bearer <your-token>"
+        "-y",
+        "mcp-remote",
+        "https://example.trycloudflare.com/mcp",
+        "--header",
+        "Authorization: Bearer your-secret-token-here"
       ]
     }
   }
 }
 ```
 
-The *Copy Claude (mcp-remote)* button emits exactly this, with the public URL and token
-filled in. The `Authorization` header is only added when auth is enabled in the panel.
+## Troubleshooting
 
-## Security checklist
+| Symptom | Check |
+| --- | --- |
+| Public URL opens but MCP calls fail | Ensure the client URL ends with `/mcp`. |
+| 401/403 responses | Confirm the Bearer token exactly matches `auth_token`. |
+| Tunnel starts but no URL appears | Check the MCP panel logs or run the tunnel command manually. |
+| Client connects but tools are missing | Enable the required advanced groups with the MCP panel or `enable_tools`. |
+| Connection is slow | Prefer a tunnel geographically close to the client and avoid enabling all advanced tools. |
 
-- [ ] **Enable Bearer-token auth** before exposing the server, and use a long random token.
-- [ ] Keep the server bound to localhost (do **not** enable *Allow remote*); let the tunnel
-      be the only public entry point.
-- [ ] Share the public URL + token over a private channel; rotate the token if it leaks.
-- [ ] Stop the tunnel (and the server) when you are done — an ephemeral Quick Tunnel URL
-      stops working as soon as `cloudflared` exits.
-- [ ] Consider the **STRICT** security level (Settings → Security) to tighten path/command
-      validation while the server is publicly reachable.
+## Shutdown checklist
+
+- Stop the remote client session.
+- Stop the tunnel.
+- Rotate the token if it was shared outside your machine.
+- Disable any advanced tool groups no longer needed.

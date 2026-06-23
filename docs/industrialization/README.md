@@ -1,91 +1,38 @@
 # Industrialized AI Game Production with Godot MCP
 
-This guide turns the Godot MCP plugin from "an AI that can edit a project" into
-**an AI that can ship a small game end to end**. It ties together three loops:
+Godot MCP Native can support more than one-off editor edits. With the right tool presets, specs and verification gates, an AI assistant can run an iterative production loop for a small game slice.
 
-1. **Asset generation loop** — the AI can produce sprites/textures and sound
-   effects, not just code.
-2. **Design & planning loop** — a one-sentence idea becomes an ordered,
-   verifiable task list.
-3. **Autonomous iteration loop** — plan → execute → run → verify → fix →
-   repeat, with memory and a clear definition of done.
+## The three loops
 
-Everything below is built on **existing plugin tools** plus the one new tool
-this introduces, [`generate_asset`](../tools/project-tools.md). No external
-runtime is required for the offline path.
-
-## The three loops at a glance
-
-```
-                 ┌──────────────────────────────────────────────┐
-                 │            Autonomous Iteration                │
-                 │   plan → execute → run → verify → fix → ↺      │
-                 └───────┬───────────────┬───────────────┬───────┘
-                         │               │               │
-                ┌────────▼──────┐ ┌──────▼───────┐ ┌─────▼────────┐
-   Design &     │ GDD → tasks   │ │ build scenes │ │ play_and_    │  Verify
-   Planning ───▶│ + gameplay    │ │ + scripts +  │ │ verify /     │◀── against
-                │ spec metrics  │ │ ASSETS       │ │ assertions   │  metrics
-                └───────────────┘ └──────┬───────┘ └──────────────┘
-                                         │
-                                  ┌──────▼───────┐
-                  Asset           │ generate_    │
-                  Generation ────▶│ asset(...)   │  placeholder-first,
-                                  └──────────────┘  then real art
-```
-
-## Tool mapping (what each loop actually calls)
-
-| Loop | Phase | Primary tools |
+| Loop | Purpose | Representative tools |
 | --- | --- | --- |
-| Asset | placeholder art | `generate_asset` (provider=placeholder), `create_gradient_texture`, `create_drawable_texture`, `draw_on_texture` |
-| Asset | real/external art | `generate_asset` (provider=external), `reimport_resources`, `get_import_metadata` |
-| Asset | data resources | `create_custom_resource`, `batch_create_resources`, `create_animation`, `create_tileset` |
-| Design | scaffold | `create_scene`, `create_node`, `attach_script`, `write_script`, `upsert_project_input_action`, `add_project_autoload` |
-| Verify | run & assert | `play_and_verify`, `assert_runtime_condition`, `await_runtime_condition`, `get_runtime_scene_tree`, `evaluate_runtime_expression` |
-| Verify | tests | `run_project_tests`, `run_project_test`, `list_project_tests` |
-| Verify | visual | `get_editor_screenshot`, `compare_render_screenshots` |
-| Iterate | inspect/fix | `get_debug_output`, `detect_broken_scripts`, `validate_script`, `audit_project_health` |
-| Orchestrate | plan state | `manage_task_plan` (durable task graph + DoD, dependency-ready `next`, progress) |
+| **Planning loop** | Convert a game design document into executable tasks and done criteria. | `manage_task_plan`, `get_project_info`, `get_project_structure` |
+| **Production loop** | Create scenes, scripts, resources, input actions, TileSets and placeholder/generated assets. | Node, Scene, Script and Project tools; `generate_asset`, `slice_sprite_sheet`, `inspect_gltf_asset` |
+| **Verification loop** | Run the game, collect runtime state and enforce regression gates. | `run_project`, `install_runtime_probe`, `play_and_verify`, `assert_performance_budget`, `assert_no_runtime_errors`, `assert_visual_baseline` |
 
-## Using a real art / TTS provider (BYO key)
+## Recommended workflow
 
-The offline placeholder path needs no setup. To produce real art or speech, call
-`generate_asset` with `provider="external"` and a `preset`:
+1. Write or import a one-page GDD.
+2. Convert the GDD into ordered tasks with clear acceptance criteria.
+3. Attach measurable gameplay specs for feel-sensitive mechanics.
+4. Execute one vertical slice at a time.
+5. Run deterministic verification before moving to the next slice.
+6. Record learnings and failures in the task plan so the next loop starts with context.
 
-| Preset | Kind | Default key env var |
-| --- | --- | --- |
-| `openai_image` | image | `OPENAI_API_KEY` |
-| `stability_image` | image | `STABILITY_API_KEY` |
-| `elevenlabs_tts` | audio | `ELEVENLABS_API_KEY` |
-| `local_sd_webui` | image | none (local AUTOMATIC1111) |
+## Tool presets
 
-The preset fills the endpoint, headers, request body and response field; you
-only supply your own API key via the named **OS environment variable** (the key
-value is never stored in the project or logged). You can also set a default
-preset and key env var once in the **MCP panel → Asset Generation**, so callers
-can just use `provider="external"`. Any explicit `endpoint`/`headers`/etc.
-override the preset, so unlisted providers still work.
+Start with core tools. Enable advanced groups only for the current loop:
 
-Notes:
-- Returned bytes are magic-byte validated. Images accept PNG/JPEG/WEBP; audio
-  accepts WAV/OGG/MP3 (so `elevenlabs_tts`, which returns MP3, lands cleanly).
-  For external audio, name the file `.mp3`/`.ogg`/`.wav` so Godot imports it.
-- `stability_image` posts `multipart/form-data` (`body_format: "multipart"`),
-  as required by the Stability v2beta API; set `body_format` yourself for other
-  multipart endpoints.
-- Presets that need no auth (e.g. `local_sd_webui`, `api_key_env: ""`) ignore any
-  panel-level key env var, so a global key set for another provider never leaks in.
+- Planning: `Project-Advanced` for `manage_task_plan` and project audits.
+- Production: `Node-Write-Advanced`, `Scene-Advanced`, `Script-Advanced`, selected `Project-Advanced` asset/resource tools.
+- Verification: `Debug-Advanced` plus runtime probe and regression gate tools.
 
-```
-generate_asset({ type: "sprite", prompt: "pixel-art hero", provider: "external", preset: "openai_image" })
-generate_asset({ type: "sfx", prompt: "menu blip", provider: "external", preset: "elevenlabs_tts", resource_path: "res://audio/blip.mp3" })
-```
+## Bring-your-own providers
+
+`generate_asset` can be wired to external asset providers through project configuration and provider presets. Keep API keys out of source control and prefer dedicated, minimally scoped provider credentials.
 
 ## Read next
 
-- [GDD → task decomposition](gdd-to-tasks.md) — the planner playbook.
-- [Gameplay spec template](gameplay-spec-template.md) — turn "feel" into
-  numbers you can assert.
-- [Autonomous iteration harness](autonomous-iteration-harness.md) — the loop
-  that drives it all, with DoD and recovery rules.
+- [Planner Playbook: GDD → Executable Task List](gdd-to-tasks.md)
+- [Gameplay Spec Template](gameplay-spec-template.md)
+- [Autonomous Iteration Harness](autonomous-iteration-harness.md)

@@ -1,69 +1,57 @@
-# Godot MCP Native
+# Godot MCP Native Addon
 
-[![Godot](https://img.shields.io/badge/Godot-4.7-478CBF?logo=godot-engine&logoColor=white)](https://godotengine.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.0.7--pre1-orange.svg)](../../docs/changelog.md)
+This directory is the distributable Godot addon. Copy `addons/godot_mcp` into any Godot 4.7 project to run an MCP server inside the editor.
 
-> 中文说明见 [README.zh.md](README.zh.md)
+## What ships here
 
-An editor plugin that runs a [Model Context Protocol](https://modelcontextprotocol.io) server
-**inside Godot**, letting AI assistants (Claude, Cursor, Cline, Codex, …) read and edit your
-project — scenes, scripts, nodes, resources, and the running game — over a standard protocol.
-The server is pure GDScript: **no Node.js, no Python, no external bridge**.
-
-## Highlights
-
-- **211 MCP tools** in 6 categories (30 core enabled by default; 179 advanced, opt-in) plus 2 always-on meta tools for tool discovery (`list_tool_catalog`, `enable_tools`).
-- **HTTP/SSE** (default port `9080`) and **stdio** transports.
-- **Runtime probe** to inspect and drive a *running* game, not just edit-time state.
-- Optional **Bearer-token auth**, path validation, and a configurable security level.
+- `plugin.cfg` and `mcp_server_native.gd` — the editor plugin entry point.
+- `native_mcp/` — JSON-RPC/MCP core, HTTP/SSE and stdio transports, auth, settings, tunnel support and tool-state management.
+- `tools/` — the 211 registered MCP tools.
+- `runtime/mcp_runtime_probe.gd` — optional autoload used to inspect and drive a running game.
+- `ui/` — the MCP dock panel, tool manager and detail views.
+- `translations/` — panel text and tool descriptions.
 
 ## Quick start
 
-1. Enable the plugin in **Project → Project Settings → Plugins**.
-2. In the **MCP** dock panel, choose **HTTP** and click **Start** (default port `9080`).
-3. Point your AI client at `http://localhost:9080/mcp`:
+1. Copy this folder to `res://addons/godot_mcp` in your project.
+2. Enable **Godot MCP Native** in **Project → Project Settings → Plugins**.
+3. Open the **MCP** dock and click **Start Server**.
+4. Connect an MCP client to `http://localhost:9080/mcp`.
 
 ```json
 {
   "mcpServers": {
-    "godot-mcp": { "url": "http://localhost:9080/mcp" }
+    "godot-mcp": {
+      "url": "http://localhost:9080/mcp"
+    }
   }
 }
 ```
 
-4. Ask your assistant to *"get the Godot project info"* to confirm the connection.
+## Tool model
 
-## Tools
+The addon registers 211 tools:
 
-| Category | Tools | Category | Tools |
-| --- | ---: | --- | ---: |
-| Node | 26 | Editor | 23 |
-| Script | 17 | Debug & Runtime | 73 |
-| Scene | 12 | Project | 58 |
+- 30 core tools enabled by default.
+- 179 advanced tools registered but disabled until enabled from the panel or `enable_tools`.
+- 2 always-on meta tools: `list_tool_catalog` and `enable_tools`.
 
-Only the 30 core tools are on by default; enable advanced tools from the MCP panel.
-Full list: [Tools Reference](../../docs/tools/README.md).
+See the project-level [Tools Reference](../../docs/tools/README.md).
 
 ## Configuration
 
-Settings live in the MCP panel and persist to `user://mcp_settings.cfg`
-(`transport_mode`, `http_port`, `auth_enabled`, `auth_token`, `sse_enabled`, …).
-Headless launch: `godot --editor --path <project> -- --mcp-server --mcp-port=9080`.
+Settings are edited from the MCP dock and stored in `user://mcp_settings.cfg`. Common settings are `transport_mode`, `http_port`, `auth_enabled`, `auth_token`, `auto_start`, `security_level`, `rate_limit` and `sse_enabled`.
 
-See [Configuration](../../docs/configuration.md) for the full reference.
+Headless startup:
+
+```bash
+godot --editor --path /path/to/project -- --mcp-server --mcp-port=9080
+```
 
 ## Documentation
 
-[Getting Started](../../docs/getting-started.md) ·
-[Configuration](../../docs/configuration.md) ·
-[Architecture](../../docs/architecture.md) ·
-[Tools](../../docs/tools/README.md) ·
-[Testing](../../docs/testing.md) ·
-[Contributing](../../docs/contributing.md)
+Start with the repository [README](../../README.md), [Getting Started](../../docs/getting-started.md), [Configuration](../../docs/configuration.md) and [Tools Reference](../../docs/tools/README.md).
 
 ## License
 
-[MIT](LICENSE) · **Author:** xianyu0514
-
-*Community plugin — not officially affiliated with Godot Engine or Anthropic.*
+MIT. See [LICENSE](../../LICENSE).
