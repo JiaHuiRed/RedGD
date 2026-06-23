@@ -286,3 +286,14 @@ func test_set_dod_new_criterion_non_dict_observed_does_not_mutate():
 	assert_has(r, "error", "non-dict observed should error")
 	var task: Dictionary = _store.get_task(tid)
 	assert_eq((task["dod"] as Array).size(), 1, "no half-created criterion left behind")
+
+func test_set_dod_existing_criterion_error_rolls_back_gate():
+	# Attaching a gate AND passing a bad observed in one call must error WITHOUT
+	# leaving the gate on the existing criterion (transactional update).
+	_store.init_plan("g", true)
+	var add: Dictionary = _store.add_task({"title": "t", "dod": ["seed"]})
+	var tid: String = add["task"]["id"]
+	var r: Dictionary = _store.set_dod(tid, {"index": 0, "gate": {"type": "no_runtime_errors"}, "observed": 5})
+	assert_has(r, "error", "non-dict observed should error")
+	var task: Dictionary = _store.get_task(tid)
+	assert_false((task["dod"][0] as Dictionary).has("gate"), "gate not committed when call errors")

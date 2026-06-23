@@ -451,7 +451,10 @@ func set_dod(task_id: String, args: Dictionary) -> Dictionary:
 
 	if target < 0 or target >= dod.size():
 		return {"error": "dod index %d out of range (task has %d criteria)" % [target, dod.size()]}
-	var entry: Dictionary = dod[target]
+	# Work on a copy and only commit it back once every validation has passed,
+	# so an error return never leaves a criterion partially mutated (e.g. a gate
+	# attached but the subsequent 'observed' evaluation rejected).
+	var entry: Dictionary = (dod[target] as Dictionary).duplicate(true)
 	# Allow attaching/replacing a gate on this criterion.
 	if args.has("gate"):
 		if args["gate"] == null:
@@ -478,6 +481,9 @@ func set_dod(task_id: String, args: Dictionary) -> Dictionary:
 			entry["evidence"] = str(args["evidence"])
 	if args.has("criterion"):
 		entry["criterion"] = str(args["criterion"])
+	# All validations passed — commit the mutated copy back.
+	dod[target] = entry
+	task["dod"] = dod
 	task["updated_at"] = _now()
 	_touch()
 	return {"status": "ok", "task": task}
