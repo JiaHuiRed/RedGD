@@ -589,9 +589,15 @@ func _tool_batch_scene_node_edits(params: Dictionary) -> Dictionary:
 						parent_node = scene_root
 					else:
 						return {"error": "Parent node not found: " + parent_path}
-				if not ClassDB.class_exists(node_type):
-					return {"error": "Invalid node type: " + node_type}
-				var new_node: Node = ClassDB.instantiate(node_type)
+				var type_error: String = _node_type_error(node_type)
+				if not type_error.is_empty():
+					return {"error": type_error}
+				var new_instance: Variant = ClassDB.instantiate(node_type)
+				if not (new_instance is Node):
+					if new_instance is Object and not (new_instance is RefCounted):
+						(new_instance as Object).free()
+					return {"error": "Failed to instantiate node type '%s' as a Node." % node_type}
+				var new_node: Node = new_instance
 				new_node.name = node_name
 				new_node.owner = scene_root
 				prepared_operations.append({
