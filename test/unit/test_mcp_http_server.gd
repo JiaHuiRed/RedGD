@@ -62,9 +62,17 @@ func test_utf8_body_survives_chunk_boundary():
 	var all_bytes: PackedByteArray = raw.to_utf8_buffer()
 	# 找到正文起点，并在某个中文字符的 3 字节中间切一刀
 	var header_end: int = _http_server._find_header_terminator(all_bytes)
-	var split_at: int = header_end + 4 + 2  # 落在首个中文字符的字节中间
+	# 正文为 {"name":"... ，前 9 字节是 ASCII，首个中文字符 '我' 的 3 字节 UTF-8
+	# 编码位于正文偏移 9~11，故 +10 恰好落在 '我' 的字节中间，真正制造跨分片边界。
+	var split_at: int = header_end + 4 + 10
 	var first_chunk: PackedByteArray = all_bytes.slice(0, split_at)
 	var second_chunk: PackedByteArray = all_bytes.slice(split_at)
+
+	# 回归断言：旧实现逐分片解码再拼接，会把被拆开的 '我' 损坏成乱码。
+	var old_style: String = first_chunk.get_string_from_utf8() + second_chunk.get_string_from_utf8()
+	assert_false(old_style.contains("我的游戏标题"), "Per-fragment decode must corrupt the split multi-byte char (reproduces the bug)")
+
+	# 新实现:先累积全部字节,再整体解码,中文应完整无损。
 	var reassembled: PackedByteArray = PackedByteArray()
 	reassembled.append_array(first_chunk)
 	reassembled.append_array(second_chunk)
