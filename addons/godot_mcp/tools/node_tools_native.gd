@@ -50,7 +50,7 @@ func _register_create_node(server_core: RefCounted) -> void:
 				},
 				"node_type": {
 					"type": "string",
-					"description": "Type of node to create (e.g. 'Node2D', 'Sprite2D', 'CharacterBody2D')"
+					"description": "Type of node to create (e.g. 'Node2D', 'Sprite2D', 'CharacterBody2D'). Must be a concrete Node-derived class; non-Node classes (e.g. 'Resource') and abstract base classes (e.g. 'CanvasItem') are rejected with a clear error."
 				},
 				"node_name": {
 					"type": "string",
@@ -97,6 +97,22 @@ func _resolve_node_path(node_path: String) -> Node:
 	
 	return scene_root.get_node_or_null(relative)
 
+# Validate a requested node_type before instantiation. Returns "" when the type
+# is a concrete Node-derived class, or a clear actionable error otherwise. Pure
+# (only reads ClassDB) so it is unit-testable headlessly. This prevents the
+# confusing null-reference crash that used to happen when AI passed a non-Node
+# class (e.g. "Resource") or an abstract Node class (e.g. "CanvasItem").
+static func _node_type_error(node_type: String) -> String:
+	if node_type.strip_edges().is_empty():
+		return "node_type is required"
+	if not ClassDB.class_exists(node_type):
+		return "Invalid node type: %s (no such class)" % node_type
+	if not ClassDB.is_parent_class(node_type, "Node"):
+		return "Node type '%s' is not a Node-derived class and cannot be added to the scene tree." % node_type
+	if not ClassDB.can_instantiate(node_type):
+		return "Node type '%s' is abstract and cannot be instantiated. Use a concrete subclass." % node_type
+	return ""
+
 func _tool_create_node(params: Dictionary) -> Dictionary:
 	var parent_path: String = params.get("parent_path", "")
 	var node_type: String = params.get("node_type", "Node")
@@ -115,8 +131,9 @@ func _tool_create_node(params: Dictionary) -> Dictionary:
 	if not parent:
 		return {"error": "Parent node not found: " + parent_path}
 
-	if not ClassDB.class_exists(node_type):
-		return {"error": "Invalid node type: " + node_type}
+	var type_error: String = _node_type_error(node_type)
+	if not type_error.is_empty():
+		return {"error": type_error}
 
 	# Handle name conflicts
 	if parent.has_node(node_name):
@@ -134,7 +151,14 @@ func _tool_create_node(params: Dictionary) -> Dictionary:
 				# Allow Godot to auto-rename with @ suffix (existing behavior)
 				pass
 
-	var node: Node = ClassDB.instantiate(node_type)
+	var instance: Variant = ClassDB.instantiate(node_type)
+	if not (instance is Node):
+		# Defensive: _node_type_error already rejects non-Node / abstract types,
+		# but guard against a null/non-Node instance instead of crashing on .name.
+		if instance is Object and not (instance is RefCounted):
+			(instance as Object).free()
+		return {"error": "Failed to instantiate node type '%s' as a Node." % node_type}
+	var node: Node = instance
 	node.name = node_name
 
 	var scene_root: Node = _get_user_scene_root()
@@ -565,9 +589,15 @@ func _tool_batch_scene_node_edits(params: Dictionary) -> Dictionary:
 						parent_node = scene_root
 					else:
 						return {"error": "Parent node not found: " + parent_path}
-				if not ClassDB.class_exists(node_type):
-					return {"error": "Invalid node type: " + node_type}
-				var new_node: Node = ClassDB.instantiate(node_type)
+				var type_error: String = _node_type_error(node_type)
+				if not type_error.is_empty():
+					return {"error": type_error}
+				var new_instance: Variant = ClassDB.instantiate(node_type)
+				if not (new_instance is Node):
+					if new_instance is Object and not (new_instance is RefCounted):
+						(new_instance as Object).free()
+					return {"error": "Failed to instantiate node type '%s' as a Node." % node_type}
+				var new_node: Node = new_instance
 				new_node.name = node_name
 				new_node.owner = scene_root
 				prepared_operations.append({

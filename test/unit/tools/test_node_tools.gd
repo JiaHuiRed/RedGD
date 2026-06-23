@@ -347,3 +347,28 @@ func test_apply_one_way_collision_helper_polygon():
 	assert_true(poly.get("one_way_collision"), "one_way_collision should be enabled")
 	assert_true("one_way_collision_margin" in result.get("applied", []), "margin should be applied")
 	poly.free()
+
+# ---------- create_node 类型校验（深度优化：拦截非 Node / 抽象类） ----------
+
+func test_node_type_error_accepts_concrete_nodes():
+	assert_eq(NodeToolsNative._node_type_error("Node"), "", "Node is valid")
+	assert_eq(NodeToolsNative._node_type_error("Sprite2D"), "", "Sprite2D is valid")
+	assert_eq(NodeToolsNative._node_type_error("Node2D"), "", "Node2D is valid")
+
+func test_node_type_error_rejects_unknown_class():
+	var err: String = NodeToolsNative._node_type_error("NotARealClass")
+	assert_true(err.contains("no such class"), "unknown class -> clear error, got: " + err)
+
+func test_node_type_error_rejects_non_node_class():
+	var err_res: String = NodeToolsNative._node_type_error("Resource")
+	assert_true(err_res.contains("not a Node-derived"), "Resource is not a Node, got: " + err_res)
+	var err_rc: String = NodeToolsNative._node_type_error("RefCounted")
+	assert_true(err_rc.contains("not a Node-derived"), "RefCounted is not a Node, got: " + err_rc)
+
+func test_node_type_error_rejects_abstract_node():
+	var err: String = NodeToolsNative._node_type_error("CanvasItem")
+	assert_true(err.contains("abstract"), "CanvasItem is abstract, got: " + err)
+
+func test_node_type_error_rejects_empty():
+	assert_true(NodeToolsNative._node_type_error("").length() > 0, "empty type -> error")
+	assert_true(NodeToolsNative._node_type_error("   ").length() > 0, "whitespace type -> error")
