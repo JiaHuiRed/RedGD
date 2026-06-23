@@ -1,148 +1,122 @@
 # Autonomous Iteration Harness
 
-This is the loop that ties the [planner](gdd-to-tasks.md), the
-[gameplay spec](gameplay-spec-template.md), and the
-[asset generation tool](../tools/project-tools.md) together so the AI can drive
-a task to completion **without stopping to ask a human on every failure**.
+An autonomous harness is a repeatable loop that lets an AI assistant plan, edit, run, verify and fix a Godot game slice without losing context.
 
-> Failure is data. The harness routes failures back into a fix step and retries
-> until the definition of done passes or a hard stop condition is hit.
+## Loop overview
 
-## The loop
-
-```
-        ┌──────────────────────────── memory ───────────────────────────┐
-        │ task list · attempts · last error · measured metrics · assets  │
-        └────────────────────────────────────────────────────────────────┘
-            │            ▲                                        ▲
-            ▼            │                                        │
-   ┌──────┐   ┌────────┐   ┌─────┐   ┌────────┐   ┌─────┐
-   │ PLAN │──▶│EXECUTE │──▶│ RUN │──▶│ VERIFY │──▶│ DoD?│──▶ done
-   └──────┘   └────────┘   └─────┘   └────────┘   └──┬──┘
-                  ▲                                   │ no
-                  │              ┌──────┐             │
-                  └──────────────│ FIX  │◀────────────┘
-                                 └──────┘
+```text
+PLAN → EXECUTE → RUN → VERIFY → FIX → repeat until Definition of Done passes
 ```
 
-## Phases
+Each phase should write evidence back to the task plan so the next iteration starts from facts rather than memory.
 
-### 1. PLAN
-Pop the next task whose `depends_on` are all done. If none are ready and tasks
-remain, that is a planning bug — surface it. Each task carries its `do` action
-and a `done_when` list (see the planner playbook).
+## Phase 1 — PLAN
 
-Persist this graph with [`manage_task_plan`](../tools/project-tools.md) instead of
-keeping it only in chat: `manage_task_plan(action="init", goal=...)` once, then
-`add_task` (with `depends_on` and `dod` criteria) per task. `action="next"`
-returns the dependency-ready tasks, blocked tasks and overall progress, so the
-loop resumes deterministically even across sessions.
+Inputs:
 
-### 2. EXECUTE
-Perform the task's action with the relevant tools:
-- **Assets:** `generate_asset` (placeholder-first), `create_custom_resource`,
-  `batch_create_resources`, `create_tileset`, `create_animation`.
-- **Scenes/scripts:** `create_scene`, `create_node`, `attach_script`,
-  `write_script`, `update_resource_properties`.
-- **Project:** `upsert_project_input_action`, `add_project_autoload`,
-  `set_project_setting`, `create_theme`.
+- Current GDD or task brief.
+- Existing project structure.
+- Tool catalog and enabled presets.
+- Previous iteration failures.
 
-### 3. RUN
-Bring the change to life: `play_and_verify` (runs the scene and applies input
-steps) or `run_project_test` / `run_project_tests` for logic. For edit-time
-checks use `validate_script` and `detect_broken_scripts` first to fail fast.
-For gameplay/feel checks set `play_and_verify(deterministic=true)` so input steps
-advance exact physics frames (reproducible, fps-independent) and use `sample` to
-capture a per-frame `trajectory` + `metrics` in the same call.
+Outputs:
 
-### 4. VERIFY
-Check the task's `done_when` using assertions:
-- Runtime metrics → `assert_runtime_condition`, `await_runtime_condition`,
-  `evaluate_runtime_expression`, `get_runtime_scene_tree`, or `play_and_verify`
-  trajectory `metrics` asserted via `{metric, aggregate, operator, expected}`
-  (e.g. jump height = `metrics.y.min`, time-to-apex = `metrics.y.min_time`).
-- Tests → `run_project_tests` (expect 0 failures).
-- Visuals → `get_editor_screenshot` + `compare_render_screenshots`.
+- Ordered task list.
+- Files/scenes/resources expected to change.
+- Verification commands and metrics.
+- Hard stop conditions.
 
-**Regression gates** turn VERIFY into an automated *no-regression* ratchet — each
-returns a single `passed` verdict the loop can branch on:
-- Visual → `assert_visual_baseline(candidate_path, baseline_path, max_diff_ratio=...)`.
-  First run bootstraps the golden image and passes; later runs fail when the frame
-  drifts beyond tolerance (optionally writing a diff heatmap to `diff_output_path`).
-  Approve an intended visual change with `update_baseline=true`.
-- Performance → `assert_performance_budget(budget={min_fps: 55, max_frame_time_ms: 18, max_memory_mb: 256})`
-  fails the slice if the running game breaches the budget.
-- Errors → `assert_no_runtime_errors()` is a hard gate: any captured `stderr` event
-  fails the run, so a silent runtime error can never pass as "done".
+Useful tools: `manage_task_plan`, `get_project_info`, `get_project_structure`, `list_project_resources`.
 
-### 5. DoD gate
-If every `done_when` passes, mark the task done and record results in memory.
-If not, go to FIX. With `manage_task_plan`, record each criterion via
-`set_dod(id, index/criterion, met=true, evidence=...)`; `set_status(id, "done")`
-then refuses to complete a task whose DoD criteria are not all met (override with
-`force=true`), turning the DoD into an enforced gate rather than a checklist.
+## Phase 2 — EXECUTE
 
-### 6. FIX
-Diagnose with `get_debug_output`, the measured-vs-target delta from VERIFY, and
-`audit_project_health`. Apply the smallest change that addresses the specific
-failure, then loop back to RUN. Do **not** re-plan the whole task on the first
-failure — fix and retry.
+Apply the smallest coherent set of edits for the current task.
 
-## Memory (carry between iterations)
+Guidelines:
 
-Keep a compact record so retries are informed, not blind:
+- Read existing scenes/scripts before writing.
+- Prefer existing project conventions.
+- Enable only the advanced tool groups needed for the task.
+- Record generated assets and resource paths in the task plan.
 
-```
-task_id, attempt_count, status,
-last_action, last_error,
-metrics: { jump_height: 84 (target 96), ... },
-assets: { player_sprite: res://art/player.png, ... },
-decisions: [ "raised v0 from 380 to 430 after 12px short jump" ]
-```
+Useful tools: Node, Scene, Script and selected Project tools.
 
-## Definition of Done (slice-level)
+## Phase 3 — RUN
 
-Stop the loop as **success** only when all hold:
+Start the project and ensure the target scene is live.
 
-- [ ] Every task `done_when` passes.
-- [ ] `run_project_tests` → 0 failures.
-- [ ] `play_and_verify` golden path (start → core loop → win) passes.
-- [ ] `detect_broken_scripts` / `audit_project_health` → clean.
-- [ ] Gameplay-spec metrics within tolerance.
-- [ ] Required real assets in place (no placeholders left on the must-replace list).
+Useful tools:
 
-## Recovery rules (when NOT to stop and ask)
+- `run_project`
+- `await_scene_ready`
+- `install_runtime_probe`
+- `get_runtime_scene_tree`
+- `get_runtime_info`
 
-Auto-recover (retry FIX) for:
-- Failed assertions / metric out of tolerance → adjust params, retry.
-- Broken script / parse error → fix syntax, retry.
-- Missing asset → `generate_asset` a placeholder, retry.
-- Missing input action / autoload → create it, retry.
+## Phase 4 — VERIFY
 
-## Hard stop conditions (DO surface to the human)
+Run objective checks instead of only visual inspection.
 
-Stop and report when:
-- The same task fails **N times** (default 3) with no progress (same error).
-- A task needs a real external credential/endpoint that is not configured
-  (`generate_asset` provider=external returns `unconfigured`).
-- A design decision is genuinely ambiguous (two valid interpretations change
-  the slice).
-- A destructive or irreversible action would be required.
+Examples:
 
-## Putting it together (pseudocode)
+- `play_and_verify` for deterministic input/game-feel checks.
+- `assert_no_runtime_errors` for runtime stability.
+- `assert_performance_budget` for frame-time/FPS budgets.
+- `assert_visual_baseline` for screenshot regressions.
+- `get_runtime_screenshot` for human review evidence.
 
-```
-plan = decompose(gdd)              # planner playbook
-memory = {}
-while not dod_met(plan, memory):
-    task = next_ready(plan, memory)
-    execute(task)                  # generate_asset / create_scene / ...
-    run(task)                      # play_and_verify / run_project_tests
-    result = verify(task)          # assertions + metrics
+## Phase 5 — FIX
+
+If verification fails:
+
+1. Capture the exact failure.
+2. Identify the smallest likely cause.
+3. Patch only the relevant files.
+4. Re-run the failed check.
+5. Update the task plan with the new result.
+
+Do not continue to the next task while the current task's required gates are failing.
+
+## Definition of Done
+
+A slice is done when:
+
+- Required scenes/scripts/resources exist.
+- Acceptance metrics pass.
+- No runtime errors are reported in the smoke test.
+- Performance budget is within the chosen threshold.
+- The task plan marks the task complete with evidence.
+
+## Recovery rules
+
+Continue autonomously when:
+
+- A test fails with a clear local cause.
+- A resource path is wrong but the intended file exists.
+- A scene needs a straightforward import/refresh.
+- A tool is disabled and can be enabled through `enable_tools`.
+
+Stop and ask a human when:
+
+- Required credentials, paid provider keys or licensed assets are missing.
+- The GDD contradicts itself.
+- The requested change would remove explicit safety/auth controls.
+- A failing metric requires a design decision rather than an implementation fix.
+
+## Pseudocode
+
+```text
+while task_plan.has_open_tasks():
+    task = task_plan.next_ready_task()
+    enable_tools(task.required_groups)
+    inspect_current_state(task)
+    implement(task)
+    run_project()
+    install_runtime_probe_if_needed()
+    result = verify(task.done_when)
     if result.passed:
-        mark_done(task, memory)
+        task_plan.mark_done(task, evidence=result)
     else:
-        if task.attempts >= 3 or needs_human(result):
-            surface_to_human(task, result); break
-        fix(task, result, memory)  # smallest change addressing result.delta
+        fix(result.failure)
+        task_plan.record_attempt(task, result)
 ```

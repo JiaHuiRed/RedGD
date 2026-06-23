@@ -1,86 +1,87 @@
 ---
 name: testing-mcp-tools
-description: "在 Godot 编辑器中通过 HTTP 端到端实测 MCP 工具（尤其是补充类工具）。使用场景：验证新增/修改的 MCP 工具在真实运行的编辑器里能被启用并正确执行，核对生成的资源文件。"
+description: "在 Godot 编辑器中通过 HTTP 端到端测试 MCP 工具。适用于验证新增/修改工具在真实编辑器和运行时环境中的行为。"
 ---
 
-# End-to-End Testing of Godot MCP Tools (HTTP)
+# End-to-End Testing of Godot MCP Tools
 
-验证 MCP 工具在真实运行的 Godot 编辑器里端到端可用：注册 → 启用 → HTTP 调用 → 核对副作用（生成/修改的资源文件）。GUT 单测覆盖参数校验/错误分支；本流程覆盖运行时集成。
+Use this skill when a change must be verified through a real Godot editor instance and the HTTP MCP endpoint.
 
-## 环境
+## Environment assumptions
 
-- Godot 二进制：`/home/ubuntu/godot-bin/godot`（4.7-stable）。仓库标称 4.6 但 4.7 也能跑，注意 4.7 会在编辑器导入时改写 `project.godot`（测试用不必还原；提交代码时才需还原）。
-- 启动编辑器（GUI，需 DISPLAY=:0）：
-  ```
-  DISPLAY=:0 nohup /home/ubuntu/godot-bin/godot --editor --path /home/ubuntu/repos/GodotMcp-XY > /tmp/godot_editor.log 2>&1 &
-  ```
-  首次启动会导入资源，约 1–3 分钟。Vulkan 报错（`rendering_context_driver_vulkan`）可忽略，会回退。
+- Project root: `/home/ubuntu/repos/GodotMcp-XY` unless the current session says otherwise.
+- Local MCP endpoint: `http://127.0.0.1:9080/mcp`.
+- `res://` maps to the project root.
+- Advanced tools are registered but disabled until enabled from the panel or `enable_tools`.
 
-## 关键事实（已验证）
+## Start the editor and server
 
-- **MCP 服务不会自动启动**：`Auto Start` 默认未勾。需在 MCP 主屏面板（顶部中间 `MCP` 按钮）→ Settings 标签 → 点 **Start Server**。绑定 `http://localhost:9080/mcp`。默认无鉴权（`Enable Auth` 未勾），curl 无需 token。
-- **补充工具默认禁用**：`tools/list` 只返回已启用工具（核心 30 个）。补充工具要在面板 **Tool Manager** 标签里勾选启用。计数显示在表头：`Core: 30/30 | Supp: N/166 | Total: M/196`。
-- **工具按组排列**：核心组在前，之后是 `*-Advanced` 组。动画/主题/项目配置工具在 **Project-Advanced** 组（很靠下，需大量向下滚动）。
-- **JSON-RPC 参数键是 `arguments`，不是 `params`**：`mcp_server_core.gd:_handle_tool_call` 读 `params.arguments`。这是最容易踩的坑——用错键不会报错，工具会按缺省参数跑或报缺参。
-- **禁用态调用**返回 `{"isError":true,"content":[{"text":"Tool is disabled: <name>"}]}`；未注册返回 `Tool not found`。用这两者区分"注册了但禁用" vs "根本没注册"。
-- **FileSystem 不会自动发现新文件**：MCP 工具在编辑器进程内写文件后，FileSystem dock 不立即刷新。**切换窗口焦点离开再回到 Godot** 会触发重扫描（点任务栏其它窗口→点回 Godot 标题栏），新文件夹就出现了。
-- `res://` = 项目根 = `/home/ubuntu/repos/GodotMcp-XY`。
-
-## 省算力无头自启路径（推荐，免 GUI 点击）
-
-不想手动开服务/勾工具时，可在启动时一步到位：
-
-1. **预置启用态**：往 `user://mcp_tool_state.cfg` 写要测的补充工具（核心工具默认已启用，无需写入；cfg 里未列的工具保持注册默认）。用户数据目录用 `OS.get_user_data_dir()` 求得，本项目为 `~/.local/share/godot/app_userdata/Godot MCP Native/`：
-   ```
-   [meta]
-   version=1
-
-   [tools]
-   <tool_a>=true
-   <tool_b>=true
-   ```
-   md5 校验为可选（`config_manager.gd`），可省略。
-2. **带 `--mcp-server` 启动**会自动开服务并加载工具状态（`mcp_server_native.gd:212-216` 自启、`:204-205` 加载 cfg）：
-   ```
-   DISPLAY=:0 nohup /home/ubuntu/godot-bin/godot --editor --path . -- --mcp-server > /tmp/godot_editor.log 2>&1 &
-   ```
-   注意 `--` 之后才是传给插件的参数。启动 + 导入约 1 分钟，之后 `tools/list` 即含已启用的补充工具。
-3. 直接 curl 测，`tools/list` 数量应为 `30 + 已启用补充数`。
-
-## 场景上下文工具的测试（edited scene 而非新建场景）
-
-需要在编辑场景里操作节点的工具（如 `set_node_subresource` / `set_tilemap_layer_cells` / `create_node`）走的是 `EditorInterface.get_edited_scene_root()`：
-
-- **`create_scene` 的参数是 `scene_path`（不是 `path`）**；它只把 `.tscn` 写到磁盘，**不会**把新场景切成当前编辑场景（Vibe Coding 模式下切场景需要 UI 焦点，HTTP 默认不给）。所以紧接着对 `/root/<新根>` 调 `create_node` 会报 `Parent node not found`。
-- 正确做法：先用 `get_scene_tree` 查出**当前真实编辑场景**的根路径（如 `/root/Node3D`），把测试节点建在它下面，全程**不要 `save_scene`** —— 改动只在内存里，杀掉编辑器即丢弃，不污染项目。
-- 这类工具的"成功路径"无法在 headless 下端到端测（需运行中的 EditorInterface）；GUT 单测覆盖校验/错误分支即可。
-
-## 调用模板
+Preferred startup when a Godot binary is available:
 
 ```bash
-H=(-s -H "Content-Type: application/json" -X POST http://127.0.0.1:9080/mcp)
-# 列举已启用工具
-curl "${H[@]}" -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
-# 调用工具（注意 params.arguments）
-curl "${H[@]}" -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"<tool>","arguments":{...}}}'
+DISPLAY=:0 godot --editor --path /home/ubuntu/repos/GodotMcp-XY -- --mcp-server --mcp-port=9080
 ```
-返回里 `result.structuredContent` 是结构化结果，`result.content[0].text` 是 JSON 字符串副本。
 
-## 标准测试流程
+If the server is not auto-started, open the MCP panel and click **Start Server**.
 
-1. 启动编辑器，Start Server，`curl GET /mcp` 确认端点活着。
-2. **前置态证据**：`tools/list`（补充工具不在列）+ 禁用态 `tools/call`（返回 `Tool is disabled`）。截 Tool Manager 表头（`Total: x/196`）。
-3. 在 Tool Manager 勾选目标工具；确认表头 `Supp` 计数 +N，`tools/list` 现在含这些工具。
-4. HTTP 调用工具的黄金路径（带具体参数与期望值）。
-5. **核对副作用**：直接 `cat` 生成的 `.tres`（文本资源），逐字段比对（如 `length`、`loop_mode = 2` 即 PINGPONG、`tracks/*/path`、keys 数组）。在编辑器里打开该资源，Inspector 应显示正确元数据，且无导入错误。
+## HTTP call pattern
 
-## 证据要点（adversarial）
+List enabled tools:
 
-- 工具数必须恰好是 `Total: x/196`——少一个说明分类器/注册漏了。
-- `loop_mode` 等枚举要核对落盘的整数值（`.tres` 存 `loop_mode = 2`），不只是返回字符串。
-- `insert_animation_keys` 插入超过当前 `length` 的关键帧时，`length` 应自动增长（如 1.0→1.5）。
-- 颜色用十六进制字符串（`"#ff0000"`，经 `Color.from_string` 解析）；Vector3 用 `[x,y,z]` 或 `{x,y,z}`；四元数轨用 `[x,y,z,w]` 或欧拉 `[x,y,z]`。
+```bash
+curl -s \
+  -H "Content-Type: application/json" \
+  -X POST http://127.0.0.1:9080/mcp \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+```
 
-## Devin Secrets Needed
+Call a tool. Tool arguments must be nested under `params.arguments`:
 
-无。MCP HTTP 服务默认无鉴权，仅本地回环访问。
+```bash
+curl -s \
+  -H "Content-Type: application/json" \
+  -X POST http://127.0.0.1:9080/mcp \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_project_info","arguments":{}}}'
+```
+
+## Enable advanced tools
+
+Use `list_tool_catalog` to find tools without loading every schema, then enable only what is needed:
+
+```json
+{
+  "name": "enable_tools",
+  "arguments": {
+    "groups": ["Debug-Advanced"],
+    "enabled": true
+  }
+}
+```
+
+A disabled registered tool returns an error like `Tool is disabled: <name>`. An unregistered tool returns `Tool not found`.
+
+## Standard verification flow
+
+1. Confirm `tools/list` works.
+2. Confirm the target tool is enabled.
+3. Capture pre-state with read-only tools or filesystem inspection.
+4. Call the target tool with minimal valid arguments.
+5. Verify the structured response.
+6. Verify side effects in Godot/project files/runtime state.
+7. Run the closest unit or integration test.
+8. Record exact commands and results in the PR.
+
+## Scene-context caveat
+
+Tools that rely on `EditorInterface.get_edited_scene_root()` operate on the currently edited scene, not necessarily the last `.tscn` written to disk. If a test creates a scene file and immediately calls node tools, open that scene first or target the actual edited scene root from `get_scene_tree`.
+
+## Evidence to capture
+
+- Enabled tool count or target group state.
+- JSON-RPC request/response for the target tool.
+- File/resource diff or runtime state proving the side effect.
+- Test command output.
+
+## Secrets
+
+No secret is required for the default local HTTP server when auth is disabled. If auth is enabled, use a temporary local token and do not commit it.

@@ -1,64 +1,56 @@
 # Architecture
 
-Godot MCP Native embeds an MCP server inside the Godot editor process. There is no broker,
-sidecar, or language runtime between the AI client and the engine — requests are handled by
-GDScript that already has first-class access to `EditorInterface`, the `SceneTree`,
-`ClassDB`, and the resource system.
+Godot MCP Native is a Godot editor plugin that embeds an MCP server in the editor process. The server exposes editor, project and runtime capabilities through JSON-RPC/MCP tools while using Godot APIs as the execution boundary.
 
 ## High-level view
 
+```text
+MCP client
+  │ HTTP/SSE or stdio
+  ▼
+Transport layer
+  │ JSON-RPC messages
+  ▼
+MCP server core
+  ├─ tool registry and classification
+  ├─ auth, rate limit and security checks
+  ├─ resources/prompts support
+  └─ notifications
+      │
+      ▼
+Tool modules ── Godot EditorInterface / ProjectSettings / ResourceLoader
+      │
+      └─ Runtime probe autoload for running-game inspection and control
 ```
-AI client (Claude / Cursor / Cline / …)
-        │  JSON-RPC over HTTP(+SSE) or stdio
-        ▼
-Transport  (mcp_http_server.gd | mcp_stdio_server.gd)
-        │  decoded MCP request
-        ▼
-Server core (mcp_server_core.gd)
-   ├─ auth check ............ mcp_auth_manager.gd
-   ├─ tool registry ......... per-category *_tools_native.gd
-   ├─ classification ........ mcp_tool_classifier.gd
-   ├─ resources ............. mcp_resource_manager.gd
-   └─ debugger bridge ....... mcp_debugger_bridge.gd
-        │  Godot editor / engine APIs
-        ▼
-Editor state, scenes, scripts, resources  ── and ──  the running game (via the runtime probe)
-```
-
-A request flows in one direction and back: the transport decodes it, the core authenticates
-and dispatches it to the registered tool `Callable`, the tool acts on the engine, and the
-result is serialised back to the client over the same transport.
 
 ## Plugin lifecycle
 
-`mcp_server_native.gd` is the `EditorPlugin` entry point. On load it:
-
-1. Reads `user://mcp_settings.cfg` (so headless `--mcp-server` runs honour the saved config).
-2. Applies any command-line overrides (`--mcp-port`, `--mcp-transport`).
-3. Constructs the server core, registers every tool, and adds the **MCP** dock panel.
-4. Optionally auto-starts the server when `auto_start` is set or `--mcp-server` is present.
+1. Godot loads `addons/godot_mcp/plugin.cfg`.
+2. `mcp_server_native.gd` is instantiated as an `EditorPlugin`.
+3. Settings are loaded from `user://mcp_settings.cfg`.
+4. Tool modules, resources and UI are registered.
+5. The server starts when the user clicks **Start Server**, when `auto_start` is true, or when Godot launches with `--mcp-server`.
+6. Connected clients call MCP tools through HTTP/SSE or stdio.
 
 ## Core components
 
-| File | Responsibility |
+| Component | Responsibility |
 | --- | --- |
-| `native_mcp/mcp_server_core.gd` | The hub: tool registration, JSON-RPC dispatch, signal bus. |
-| `native_mcp/mcp_transport_base.gd` | Abstract base shared by all transports. |
-| `native_mcp/mcp_http_server.gd` | HTTP/SSE transport; serves `/mcp` (default port 9080). |
-| `native_mcp/mcp_stdio_server.gd` | stdio transport for local-process clients. |
-| `native_mcp/mcp_types.gd` | JSON-RPC / MCP protocol constants and the `MCPTool` data class. |
-| `native_mcp/mcp_tool_classifier.gd` | Maps each tool to `{category, group}`; enforces `CORE_MAX_COUNT = 30`. |
-| `native_mcp/mcp_resource_manager.gd` | MCP resource reads, listing and subscriptions. |
-| `native_mcp/mcp_debugger_bridge.gd` | Bridges Godot's debugger to MCP (breakpoints, stack frames, variables). |
-| `native_mcp/mcp_auth_manager.gd` | HTTP Bearer-token authentication. |
-| `native_mcp/config_manager.gd` | Generic config file read/write with checksum. |
-| `native_mcp/settings_manager.gd` | Editor-facing settings + defaults, persisted to `user://`. |
-| `native_mcp/tool_state_manager.gd` | Per-tool enabled/disabled state. |
-| `native_mcp/translation_manager.gd` | Panel and tool-description localisation. |
+| `mcp_server_native.gd` | EditorPlugin entry point, settings wiring, panel registration and server lifecycle. |
+| `native_mcp/mcp_server_core.gd` | JSON-RPC/MCP method handling, tool registry, notifications and server-wide options. |
+| `native_mcp/mcp_http_server.gd` | HTTP endpoint and SSE transport. |
+| `native_mcp/mcp_stdio_server.gd` | stdio transport for clients that spawn the server process. |
+| `native_mcp/mcp_types.gd` | Protocol constants and shared data structures. |
+| `native_mcp/mcp_tool_classifier.gd` | Source of truth for tool tier (`core`, `supplementary`, `meta`) and group membership. |
+| `native_mcp/mcp_auth_manager.gd` | Bearer-token validation. |
+| `native_mcp/settings_manager.gd` | Persistent user settings. |
+| `native_mcp/tool_state_manager.gd` | Per-tool enable/disable state. |
+| `native_mcp/mcp_tunnel_manager.gd` | Cloudflare Quick Tunnel process supervision. |
+| `native_mcp/mcp_cloudflared_provider.gd` | Download/verification helper for `cloudflared`. |
 
-## Tools
+## Tool modules
 
-Tool implementations live in `addons/godot_mcp/tools/`, one file per category:
+Each category is implemented in one file under `addons/godot_mcp/tools/`:
 
 | File | Category | Tools |
 | --- | --- | ---: |
@@ -69,45 +61,64 @@ Tool implementations live in `addons/godot_mcp/tools/`, one file per category:
 | `debug_tools_native.gd` | Debug & Runtime | 73 |
 | `project_tools_native.gd` | Project | 59 |
 | `meta_tools_native.gd` | Meta | 2 |
-| | **Total** | **212** |
 
-Each tool registers a name, JSON input/output schema, a handler `Callable`, annotations, and
-its category/group. The classifier decides whether a tool ships as **core** (enabled by
-default) or **advanced** (registered but disabled until the user turns it on), with a small
-**meta** category (`list_tool_catalog`, `enable_tools`) that is always enabled so the model can
-discover and switch on more tools on demand. See the
-[Tools Reference](tools/README.md) for the full list.
+Tool registration uses `server_core.register_tool(...)` with name, description, input schema, callable, output schema, annotations, category and group. The classifier controls whether a tool is core, advanced or meta.
+
+## Core, advanced and meta tiers
+
+- **Core:** 30 high-value tools enabled by default.
+- **Advanced:** 180 tools registered but hidden from `tools/list` until enabled.
+- **Meta:** 2 always-on discovery tools: `list_tool_catalog` and `enable_tools`.
+
+This design keeps the default client context small without making specialized capabilities unavailable.
 
 ## Runtime probe
 
-`runtime/mcp_runtime_probe.gd` is an **autoload singleton** (`MCPRuntimeProbe`) that ships
-with the plugin. When a project runs, the probe gives the debug/runtime tools a live channel
-into the game: the runtime scene tree, node inspection and mutation, expression evaluation,
-input injection, and animation / audio / shader / theme / tilemap control. The first probe
-request typically returns `pending`; calling again returns the cached response.
+`runtime/mcp_runtime_probe.gd` is an Autoload used by runtime tools. It lets the MCP server inspect and drive a running game without relying solely on edit-time state.
+
+Runtime probe capabilities include:
+
+- Live scene tree inspection.
+- Runtime node property updates and method calls.
+- Expression/condition evaluation.
+- Input action and event simulation.
+- Animation, AnimationTree, material, shader, theme, TileMap and audio-bus control.
+- Screenshot, performance and memory snapshots.
+- Deterministic play verification workflows.
 
 ## UI
 
-The dock panel under `addons/godot_mcp/ui/` is built from plain Godot Control nodes:
+The MCP dock is implemented under `addons/godot_mcp/ui/`.
 
-- `mcp_panel_native.gd` — the main panel: start/stop, transport configuration, log viewer,
-  and tool management.
-- `mcp_tool_group_item.gd` / `mcp_tool_item.gd` — collapsible group and per-tool toggles.
+| UI file | Role |
+| --- | --- |
+| `mcp_panel_native.tscn` / `mcp_panel_native.gd` | Main dock: start/stop, settings, tunnel controls, logs and tool management. |
+| `mcp_tool_item.gd` | Individual tool row/toggle. |
+| `mcp_tool_group_item.gd` | Group-level expand/collapse and enablement. |
+| `mcp_tool_detail_panel.gd` | Tool details and schema display. |
+| `mcp_category_nav_item.gd` | Category navigation. |
 
 ## Utilities
 
-Shared helpers in `addons/godot_mcp/utils/` keep the tools small and consistent:
-
-- `node_utils.gd`, `resource_utils.gd`, `script_utils.gd` — node lookup and resource/script I/O.
-- `path_validator.gd` — validates paths before any file operation.
-- `vibe_coding_policy.gd` — guards interactive operations (`allow_ui_focus` / `allow_window`).
+| Utility | Purpose |
+| --- | --- |
+| `utils/path_validator.gd` | Validate project/user paths before file operations. |
+| `utils/resource_utils.gd` | Resource load/save and serialization helpers. |
+| `utils/script_utils.gd` | Script parsing and manipulation helpers. |
+| `utils/node_utils.gd` | Node lookup and property helpers. |
+| `utils/payload_utils.gd` | Normalize/validate tool payloads. |
+| `utils/vibe_coding_policy.gd` | Guardrails for editor focus/window behavior. |
+| `utils/async_job_runner.gd` | Background job orchestration for long-running work. |
 
 ## Security model
 
-Because the server runs inside the engine, it never shells out to the OS. Instead it:
+Security is layered rather than delegated to a shell:
 
-- validates every incoming path through `path_validator.gd`;
-- gates HTTP access behind optional Bearer-token auth (`mcp_auth_manager.gd`);
-- applies a configurable `security_level` and `rate_limit`;
-- uses Godot's own `FileAccess` / `DirAccess` / `ClassDB` APIs rather than string-built
-  commands, removing an entire class of command-injection risks.
+1. **Transport boundary:** HTTP/SSE stays on localhost by default; stdio is process-local.
+2. **Authentication:** optional Bearer-token auth for HTTP clients.
+3. **Rate limiting:** request throttling protects the editor from accidental floods.
+4. **Path validation:** file/resource tools validate project-relative and user paths.
+5. **Tool tiering:** advanced tools are disabled until explicitly enabled.
+6. **Godot API execution:** tools use editor/runtime APIs instead of arbitrary OS command execution.
+
+When exposing the server beyond localhost, enable auth and use the strict security level.
