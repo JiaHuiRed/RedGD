@@ -1,6 +1,6 @@
 # Tools Reference
 
-Godot MCP Native registers **211 MCP tools**: 30 core tools, 179 advanced tools and 2 always-on meta tools. The classifier in `addons/godot_mcp/native_mcp/mcp_tool_classifier.gd` is the source of truth for tier and group membership.
+Godot MCP Native registers **212 MCP tools**: 30 core tools, 180 advanced tools and 2 always-on meta tools. The classifier in `addons/godot_mcp/native_mcp/mcp_tool_classifier.gd` is the source of truth for tier and group membership.
 
 ## Category summary
 
@@ -11,9 +11,9 @@ Godot MCP Native registers **211 MCP tools**: 30 core tools, 179 advanced tools 
 | Scene | 12 | 4 | 8 | [scene-tools.md](scene-tools.md) |
 | Editor | 23 | 4 | 19 | [editor-tools.md](editor-tools.md) |
 | Debug & Runtime | 73 | 3 | 70 | [debug-tools.md](debug-tools.md) |
-| Project | 58 | 3 | 55 | [project-tools.md](project-tools.md) |
+| Project | 59 | 3 | 56 | [project-tools.md](project-tools.md) |
 | Meta | 2 | — | — | [meta-tools.md](meta-tools.md) |
-| **Total** | **211** | **30** | **179** | |
+| **Total** | **212** | **30** | **180** | |
 
 Meta tools are counted separately because they are always enabled and exist to manage the visible tool surface.
 

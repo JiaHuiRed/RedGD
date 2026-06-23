@@ -6,11 +6,11 @@ All notable user-facing changes are tracked here.
 
 - Refined and normalized the documentation set: root README, Chinese README, addon README files, configuration, architecture, testing, contributing, remote access, industrialization guides and generated tool-reference pages.
 - Repaired corrupted Chinese documentation text in repository-facing docs and agent skill guides.
-- Clarified the 211-tool model: 30 core tools, 179 advanced tools and 2 always-on meta tools.
+- Clarified the 212-tool model: 30 core tools, 180 advanced tools and 2 always-on meta tools.
 
 ## 1.0.7-pre1 (current)
 
-- Expanded the MCP tool catalog to 211 tools.
+- Expanded the MCP tool catalog to 212 tools.
 - Added asset-closure workflows including sprite-sheet slicing and glTF/GLB inspection.
 - Added deterministic `play_and_verify` workflows for frame-stepped playtesting and game-feel metrics.
 - Added regression gates for visual baselines, performance budgets and runtime errors.

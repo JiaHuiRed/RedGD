@@ -9,7 +9,7 @@ Godot MCP Native 是一个 Godot 4.7 `EditorPlugin`，位于 `addons/godot_mcp/`
 - **版本：** 1.0.7-pre1
 - **许可证：** MIT
 - **渲染器：** GL Compatibility
-- **工具数：** 211 = 30 core + 179 supplementary/advanced + 2 meta
+- **工具数：** 212 = 30 core + 180 supplementary/advanced + 2 meta
 
 ## 代码语言策略
 

@@ -15,7 +15,7 @@ No Node.js bridge, no Python daemon and no separate server process are required.
 
 - **Native server:** the MCP server lives in the editor process and ships with the plugin.
 - **Two transports:** HTTP/SSE on `http://localhost:9080/mcp` by default, plus stdio for local-process clients.
-- **211 tools with a small default surface:** 30 core tools are enabled immediately, 179 advanced tools can be enabled on demand, and 2 meta tools are always available for tool discovery.
+- **212 tools with a small default surface:** 30 core tools are enabled immediately, 180 advanced tools can be enabled on demand, and 2 meta tools are always available for tool discovery.
 - **Runtime-aware automation:** the runtime probe can inspect live scene trees, evaluate expressions, inject input, control animation/audio/shader/tilemap state, capture screenshots and collect performance metrics.
 - **Security controls:** optional Bearer-token auth, path validation, rate limiting and a strict security mode built around Godot APIs rather than arbitrary OS shell access.
 
@@ -64,9 +64,9 @@ Client-specific examples for Claude Desktop, Cursor, Trae, Cline, OpenCode and C
 | [Scene](docs/tools/scene-tools.md) | 12 | 4 | 8 | Create/open/save scenes, structure inspection, prefab-style instancing and TileMapLayer cells |
 | [Editor](docs/tools/editor-tools.md) | 23 | 4 | 19 | Run/stop, screenshots, selection, inspector state, export templates and script buffers |
 | [Debug & Runtime](docs/tools/debug-tools.md) | 73 | 3 | 70 | Logs, debugger control, profilers, runtime probe, deterministic play checks and regression gates |
-| [Project](docs/tools/project-tools.md) | 58 | 3 | 55 | Settings, resources, input map, tests, migration scans, assets, TileSets, sprite/glTF workflows and task plans |
+| [Project](docs/tools/project-tools.md) | 59 | 3 | 56 | Settings, resources, input map, tests, migration scans, assets, TileSets, sprite/glTF workflows and task plans |
 | [Meta](docs/tools/meta-tools.md) | 2 | — | — | Always-on tool discovery and on-demand enablement |
-| **Total** | **211** | **30** | **179** | |
+| **Total** | **212** | **30** | **180** | |
 
 Only core and meta tools are visible to `tools/list` at startup. Use the MCP panel or the `enable_tools` meta tool to enable advanced tools by name, group or preset. See the [Tools Reference](docs/tools/README.md).
 
