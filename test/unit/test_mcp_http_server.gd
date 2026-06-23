@@ -45,6 +45,34 @@ func test_parse_http_options_request():
 	var result: Dictionary = _http_server._parse_http_request(raw)
 	assert_eq(result["method"], "OPTIONS", "Method should be OPTIONS")
 
+func test_find_header_terminator():
+	var raw: PackedByteArray = "POST /mcp HTTP/1.1\r\nContent-Length: 2\r\n\r\n{}".to_utf8_buffer()
+	var idx: int = _http_server._find_header_terminator(raw)
+	# 分隔符位于 "Content-Length: 2" 之后
+	assert_eq(raw.slice(idx, idx + 4).get_string_from_utf8(), "\r\n\r\n", "Should locate the CRLFCRLF terminator")
+
+func test_find_header_terminator_not_found():
+	var raw: PackedByteArray = "POST /mcp HTTP/1.1\r\nContent-Length: 2".to_utf8_buffer()
+	assert_eq(_http_server._find_header_terminator(raw), -1, "Should return -1 when no terminator present")
+
+func test_utf8_body_survives_chunk_boundary():
+	# 模拟中文负载被 TCP 拆分到多字节字符中间后，累积全部字节再整体解码不应乱码
+	var body: String = '{"name":"我的游戏标题","desc":"角色描述"}'
+	var raw: String = "POST /mcp HTTP/1.1\r\nContent-Type: application/json\r\nContent-Length: " + str(body.to_utf8_buffer().size()) + "\r\n\r\n" + body
+	var all_bytes: PackedByteArray = raw.to_utf8_buffer()
+	# 找到正文起点，并在某个中文字符的 3 字节中间切一刀
+	var header_end: int = _http_server._find_header_terminator(all_bytes)
+	var split_at: int = header_end + 4 + 2  # 落在首个中文字符的字节中间
+	var first_chunk: PackedByteArray = all_bytes.slice(0, split_at)
+	var second_chunk: PackedByteArray = all_bytes.slice(split_at)
+	var reassembled: PackedByteArray = PackedByteArray()
+	reassembled.append_array(first_chunk)
+	reassembled.append_array(second_chunk)
+	var decoded: String = reassembled.get_string_from_utf8()
+	var parsed: Dictionary = _http_server._parse_http_request(decoded)
+	assert_true(parsed["body"].contains("我的游戏标题"), "Chinese title should survive chunk boundary")
+	assert_true(parsed["body"].contains("角色描述"), "Chinese description should survive chunk boundary")
+
 func test_generate_session_id():
 	var id1: String = _http_server._generate_session_id()
 	var id2: String = _http_server._generate_session_id()

@@ -332,18 +332,26 @@ func _cleanup_all_sse_connections() -> void:
 ## 处理 HTTP 请求
 ## @param peer: StreamPeerTCP - 客户端连接
 func _handle_http_request(peer: StreamPeerTCP) -> void:
-	var request: String = ""
+	# 以原始字节累积请求，最后一次性按 UTF-8 解码。
+	# 不可按 TCP 分片逐段解码：中文等多字节字符可能被拆到分片边界，
+	# 单独解码任一分片都会损坏该字符（即“乱码”）。
+	var request_bytes: PackedByteArray = PackedByteArray()
 	var start_time: int = Time.get_ticks_msec()
 	var headers_complete: bool = false
 	var content_length: int = -1
+	var header_end: int = -1
 	
 	while true:
 		var available: int = peer.get_available_bytes()
 		if available > 0:
-			var chunk: String = peer.get_utf8_string(available)
-			request += chunk
+			var read_result: Array = peer.get_partial_data(available)
+			var read_error: int = read_result[0]
+			if read_error != OK:
+				_send_http_error(peer, 400, "Failed to read request data.")
+				return
+			request_bytes.append_array(read_result[1])
 		
-		if request.length() > MAX_REQUEST_SIZE:
+		if request_bytes.size() > MAX_REQUEST_SIZE:
 			_send_http_error(peer, 413, "Request too large. Maximum size is " + str(MAX_REQUEST_SIZE / 1024) + "KB")
 			return
 		
@@ -353,10 +361,11 @@ func _handle_http_request(peer: StreamPeerTCP) -> void:
 			return
 		
 		if not headers_complete:
-			if request.contains("\r\n\r\n"):
+			header_end = _find_header_terminator(request_bytes)
+			if header_end != -1:
 				headers_complete = true
-				var header_end: int = request.find("\r\n\r\n")
-				var header_section: String = request.substr(0, header_end)
+				# 头部为 ASCII，可安全解码
+				var header_section: String = request_bytes.slice(0, header_end).get_string_from_utf8()
 				var header_lines: PackedStringArray = header_section.split("\r\n")
 				for line in header_lines:
 					var lower_line: String = line.to_lower()
@@ -369,9 +378,7 @@ func _handle_http_request(peer: StreamPeerTCP) -> void:
 				continue
 		
 		if headers_complete:
-			var header_end: int = request.find("\r\n\r\n")
-			var body: String = request.substr(header_end + 4)
-			var body_received: int = body.to_utf8_buffer().size()
+			var body_received: int = request_bytes.size() - (header_end + 4)
 			
 			if content_length >= 0:
 				if body_received >= content_length:
@@ -382,8 +389,11 @@ func _handle_http_request(peer: StreamPeerTCP) -> void:
 			else:
 				break
 	
-	if request.is_empty():
+	if request_bytes.is_empty():
 		return
+	
+	# 一次性按 UTF-8 解码完整请求，确保多字节字符（如中文）不被损坏
+	var request: String = request_bytes.get_string_from_utf8()
 	
 	# 解析 HTTP 请求
 	var parsed: Dictionary = _parse_http_request(request)
@@ -403,6 +413,16 @@ func _handle_http_request(peer: StreamPeerTCP) -> void:
 			_handle_options_request(peer, parsed)
 		_:
 			_send_http_error(peer, 405, "Method not allowed. Only POST, GET, and OPTIONS are supported.")
+
+## 在原始字节中查找 HTTP 头与正文的分隔符 "\r\n\r\n"
+## @param bytes: PackedByteArray - 已累积的请求字节
+## @returns: int - 分隔符起始下标；未找到返回 -1
+func _find_header_terminator(bytes: PackedByteArray) -> int:
+	# \r=13, \n=10
+	for i in range(bytes.size() - 3):
+		if bytes[i] == 13 and bytes[i + 1] == 10 and bytes[i + 2] == 13 and bytes[i + 3] == 10:
+			return i
+	return -1
 
 ## 解析 HTTP 请求
 ## @param raw: String - 原始 HTTP 请求字符串
