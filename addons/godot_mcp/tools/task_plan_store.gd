@@ -132,7 +132,13 @@ static func _normalize_dod(raw) -> Dictionary:
 	var out: Array = []
 	for entry in raw:
 		if entry is String:
-			out.append({"criterion": entry, "met": false, "evidence": ""})
+			# Trim so string entries are stored the same way dict entries (and the
+			# single-criterion set_dod path) are, keeping later trimmed lookups
+			# consistent.
+			var text: String = (entry as String).strip_edges()
+			if text.is_empty():
+				return {"error": "each dod entry needs a non-empty 'criterion'"}
+			out.append({"criterion": text, "met": false, "evidence": ""})
 		elif entry is Dictionary:
 			var criterion: String = str(entry.get("criterion", "")).strip_edges()
 			if criterion.is_empty():
