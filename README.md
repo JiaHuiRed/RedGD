@@ -4,8 +4,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-1.0.7--pre1-orange.svg)](docs/changelog.md)
 [![Tools](https://img.shields.io/badge/MCP%20tools-215-blue.svg)](docs/tools/README.md)
+[![Fork](https://img.shields.io/badge/fork-RedGD-9cf.svg)](https://github.com/JiaHuiRed/RedGD)
 
 > 中文文档见 [README.zh.md](README.zh.md)。
+
+> **Fork notice**: this repository (`RedGD`) is a personal fork of [xianyu0514/GodotMcp-XY](https://github.com/xianyu0514/GodotMcp-XY), maintained by [JiaHuiRed](https://github.com/JiaHuiRed) and kept in sync with upstream fixes. It's used mainly to drive the Godot editor while working on the [RedMon](https://github.com/JiaHuiRed/RedMon) project.
 
 **Drive Godot from your AI assistant.** Godot MCP Native is a Godot 4.7 editor plugin that runs a [Model Context Protocol](https://modelcontextprotocol.io) server inside the editor. AI clients such as Claude, Cursor, Cline, Trae, OpenCode and Codex can inspect and edit scenes, scripts, nodes, resources and the running game through standard MCP calls.
 
@@ -134,7 +137,9 @@ Released under the [MIT License](LICENSE).
 
 ## Author
 
-**xianyu0514**
+**xianyu0514** (upstream original author)
+
+This fork (`RedGD`) is maintained by **JiaHuiRed**.
 
 ## Acknowledgments
 

@@ -2,6 +2,14 @@
 
 All notable user-facing changes are tracked here.
 
+## [RedGD Fork] - 2026-07-13
+
+> 个人品牌化标注：fork 自 xianyu0514/GodotMcp-XY（upstream 保持同步），由 JiaHuiRed 维护，主要配合 RedMon 项目开发时驱动 Godot 编辑器使用。
+
+### 说明
+- 未改动插件功能/工具集，仅在 README.md / README.zh.md / AGENTS.md 增加 fork 归属说明
+- 后续本 fork 特有改动将沿用 RedMon 的 changelog 格式（`## [x.y.z] - YYYY-MM-DD` + 中文分类小节）记录；upstream 原有条目保持不变
+
 ## Unreleased
 
 - `set_dod` now rejects whitespace-only criterion text on the single-criterion path (both creating a new criterion by text and renaming an existing one by index), returning an error instead of persisting an empty-text criterion. This matches the non-empty rule already enforced on the full-list / `add_task` path.
