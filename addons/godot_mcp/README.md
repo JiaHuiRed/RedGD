@@ -1,22 +1,22 @@
-# Godot MCP Native Addon
+# Godot MCP Native 插件目录
 
-This directory is the distributable Godot addon. Copy `addons/godot_mcp` into any Godot 4.7 project to run an MCP server inside the editor.
+此目录是可分发的 Godot 插件。将 `addons/godot_mcp` 复制到任意 Godot 4.7 项目后，即可在编辑器内部运行 MCP 服务器。
 
-## What ships here
+## 目录内容
 
-- `plugin.cfg` and `mcp_server_native.gd` — the editor plugin entry point.
-- `native_mcp/` — JSON-RPC/MCP core, HTTP/SSE and stdio transports, auth, settings, tunnel support and tool-state management.
-- `tools/` — the 215 registered MCP tools.
-- `runtime/mcp_runtime_probe.gd` — optional autoload used to inspect and drive a running game.
-- `ui/` — the MCP dock panel, tool manager and detail views.
-- `translations/` — panel text and tool descriptions.
+- `plugin.cfg` 与 `mcp_server_native.gd` — 编辑器插件入口。
+- `native_mcp/` — JSON-RPC/MCP 核心、HTTP/SSE 与 stdio 传输、鉴权、设置、隧道和工具状态管理。
+- `tools/` — 215 个 MCP 工具的实现。
+- `runtime/mcp_runtime_probe.gd` — 可选 Autoload，用于检查和驱动运行中的游戏。
+- `ui/` — MCP 停靠面板、工具管理器和详情视图。
+- `translations/` — 面板文本和工具描述。
 
-## Quick start
+## 快速开始
 
-1. Copy this folder to `res://addons/godot_mcp` in your project.
-2. Enable **Godot MCP Native** in **Project → Project Settings → Plugins**.
-3. Open the **MCP** dock and click **Start Server**.
-4. Connect an MCP client to `http://localhost:9080/mcp`.
+1. 将本目录复制到项目的 `res://addons/godot_mcp`。
+2. 在 **Project → Project Settings → Plugins** 中启用 **Godot MCP Native**。
+3. 打开 **MCP** 面板并点击 **Start Server**。
+4. 将 MCP 客户端连接到 `http://localhost:9080/mcp`。
 
 ```json
 {
@@ -28,30 +28,30 @@ This directory is the distributable Godot addon. Copy `addons/godot_mcp` into an
 }
 ```
 
-## Tool model
+## 工具模型
 
-The addon registers 215 tools:
+插件注册 215 个工具：
 
-- 30 core tools enabled by default.
-- 183 advanced tools registered but disabled until enabled from the panel or `enable_tools`.
-- 2 always-on meta tools: `list_tool_catalog` and `enable_tools`.
+- 30 个核心工具默认启用。
+- 183 个高级工具默认注册但不启用，可在面板或通过 `enable_tools` 开启。
+- 2 个常驻元工具：`list_tool_catalog` 与 `enable_tools`。
 
-See the project-level [Tools Reference](../../docs/tools/README.md).
+完整列表见项目级 [Tools Reference](../../docs/tools/README.md)。
 
-## Configuration
+## 配置
 
-Settings are edited from the MCP dock and stored in `user://mcp_settings.cfg`. Common settings are `transport_mode`, `http_port`, `auth_enabled`, `auth_token`, `auto_start`, `security_level`, `rate_limit` and `sse_enabled`.
+配置在 MCP 面板中修改，并保存到 `user://mcp_settings.cfg`。常用配置包括 `transport_mode`、`http_port`、`auth_enabled`、`auth_token`、`auto_start`、`security_level`、`rate_limit` 和 `sse_enabled`。
 
-Headless startup:
+无界面启动：
 
 ```bash
 godot --editor --path /path/to/project -- --mcp-server --mcp-port=9080
 ```
 
-## Documentation
+## 文档
 
-Start with the repository [README](../../README.md), [Getting Started](../../docs/getting-started.md), [Configuration](../../docs/configuration.md) and [Tools Reference](../../docs/tools/README.md).
+建议从仓库 [README](../../README.md)、[Getting Started](../../docs/getting-started.md)、[Configuration](../../docs/configuration.md) 和 [Tools Reference](../../docs/tools/README.md) 开始。
 
-## License
+## 许可证
 
-MIT. See [LICENSE](../../LICENSE).
+MIT。详见 [LICENSE](../../LICENSE)。

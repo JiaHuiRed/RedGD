@@ -6,43 +6,43 @@
 [![Tools](https://img.shields.io/badge/MCP%20tools-215-blue.svg)](docs/tools/README.md)
 [![Fork](https://img.shields.io/badge/fork-RedGD-9cf.svg)](https://github.com/JiaHuiRed/RedGD)
 
-> 中文文档见 [README.zh.md](README.zh.md)。
+> English documentation: [README.en.md](README.en.md)。
 
-> **Fork notice**: this repository (`RedGD`) is a personal fork of [xianyu0514/GodotMcp-XY](https://github.com/xianyu0514/GodotMcp-XY), maintained by [JiaHuiRed](https://github.com/JiaHuiRed) and kept in sync with upstream fixes. It's used mainly to drive the Godot editor while working on the [RedMon](https://github.com/JiaHuiRed/RedMon) project.
+> **Fork 说明**：本仓库 `RedGD` 是 [xianyu0514/GodotMcp-XY](https://github.com/xianyu0514/GodotMcp-XY) 的个人 fork，由 [JiaHuiRed](https://github.com/JiaHuiRed) 维护，持续同步上游修复，主要配合 [RedMon](https://github.com/JiaHuiRed/RedMon) 项目开发时驱动 Godot 编辑器使用。
 
-**Drive Godot from your AI assistant.** Godot MCP Native is a Godot 4.7 editor plugin that runs a [Model Context Protocol](https://modelcontextprotocol.io) server inside the editor. AI clients such as Claude, Cursor, Cline, Trae, OpenCode and Codex can inspect and edit scenes, scripts, nodes, resources and the running game through standard MCP calls.
+**让 AI 直接驱动 Godot。** Godot MCP Native 是一个 Godot 4.7 编辑器插件，会在 Godot 编辑器内部运行 [Model Context Protocol](https://modelcontextprotocol.io)（MCP）服务器。Claude、Cursor、Cline、Trae、OpenCode、Codex 等 MCP 客户端可以通过标准协议读取和修改场景、脚本、节点、资源，甚至检查正在运行的游戏。
 
-No Node.js bridge, no Python daemon and no separate server process are required. The protocol layer is implemented in GDScript and talks directly to Godot editor/runtime APIs.
+插件不需要 Node.js 桥接、不需要 Python 守护进程，也不需要维护外部服务器。协议层由 GDScript 实现，并直接调用 Godot 编辑器和运行时 API。
 
-## Highlights
+## 亮点
 
-- **Native server:** the MCP server lives in the editor process and ships with the plugin.
-- **Two transports:** HTTP/SSE on `http://localhost:9080/mcp` by default, plus stdio for local-process clients.
-- **215 tools with a small default surface:** 30 core tools are enabled immediately, 183 advanced tools can be enabled on demand, and 2 meta tools are always available for tool discovery.
-- **Runtime-aware automation:** the runtime probe can inspect live scene trees, evaluate expressions, inject input, control animation/audio/shader/tilemap state, capture screenshots and collect performance metrics.
-- **Security controls:** optional Bearer-token auth, path validation, rate limiting and a strict security mode built around Godot APIs rather than arbitrary OS shell access.
+- **原生服务器：** MCP 服务运行在 Godot 编辑器进程内，随插件一起发布。
+- **双传输模式：** 默认 HTTP/SSE（`http://localhost:9080/mcp`），也支持面向本地进程客户端的 stdio。
+- **215 个工具且默认面精简：** 30 个核心工具默认启用，183 个高级工具按需启用，另有 2 个常驻元工具负责发现和启用工具。
+- **运行时自动化：** Runtime Probe 可以检查实时场景树、求值表达式、注入输入、控制动画/音频/Shader/TileMap、截图并采集性能指标。
+- **安全控制：** 支持 Bearer Token 鉴权、路径校验、限流和严格安全模式，优先使用 Godot API，避免任意系统命令执行。
 
-## Install
+## 安装
 
-### Asset Library (recommended)
+### Asset Library（推荐）
 
-1. Open **AssetLib** in Godot.
-2. Search for **Godot MCP Native**.
-3. Click **Download → Install**.
-4. Enable the plugin in **Project → Project Settings → Plugins**.
+1. 在 Godot 中打开 **AssetLib**。
+2. 搜索 **Godot MCP Native**。
+3. 点击 **Download → Install**。
+4. 在 **Project → Project Settings → Plugins** 中启用插件。
 
-### Manual install
+### 手动安装
 
-Copy `addons/godot_mcp` into your project's `addons/` directory, then enable **Godot MCP Native** from **Project Settings → Plugins**.
+将 `addons/godot_mcp` 复制到项目的 `addons/` 目录，然后在 **Project Settings → Plugins** 中启用 **Godot MCP Native**。
 
-A new **MCP** dock appears after the plugin is enabled.
+启用后，编辑器会出现新的 **MCP** 停靠面板。
 
-See [Getting Started](docs/getting-started.md) for the full walkthrough.
+完整步骤见 [Getting Started](docs/getting-started.md)。
 
-## Connect in 30 seconds
+## 30 秒连接
 
-1. In the **MCP** dock, choose **HTTP** and click **Start Server**. The default endpoint is `http://localhost:9080/mcp`.
-2. Configure your MCP client:
+1. 在 **MCP** 面板中选择 **HTTP**，点击 **Start Server**。默认端点是 `http://localhost:9080/mcp`。
+2. 在 MCP 客户端中配置：
 
 ```json
 {
@@ -54,99 +54,99 @@ See [Getting Started](docs/getting-started.md) for the full walkthrough.
 }
 ```
 
-3. Ask your assistant: `Get the Godot project info.` The client should call `get_project_info` and return project metadata.
+3. 对 AI 助手说：`Get the Godot project info.` 客户端应调用 `get_project_info` 并返回项目元数据。
 
-Client-specific examples for Claude Desktop, Cursor, Trae, Cline, OpenCode and Codex are in [Getting Started](docs/getting-started.md#5-connect-an-ai-client) and [Configuration](docs/configuration.md#client-configuration).
+Claude Desktop、Cursor、Trae、Cline、OpenCode、Codex 的配置示例见 [Getting Started](docs/getting-started.md#5-connect-an-ai-client) 和 [Configuration](docs/configuration.md#client-configuration)。
 
-## Tool surface
+## 工具范围
 
-| Category | Tools | Core | Advanced | What it covers |
+| 分类 | 工具数 | 核心 | 高级 | 覆盖内容 |
 | --- | ---: | ---: | ---: | --- |
-| [Node](docs/tools/node-tools.md) | 26 | 9 | 17 | Node CRUD, hierarchy edits, signals, groups, anchors, batch edits and scene audits |
-| [Script](docs/tools/script-tools.md) | 17 | 7 | 10 | Read/write/validate GDScript and C#, shader validation, search, symbols and references |
-| [Scene](docs/tools/scene-tools.md) | 12 | 4 | 8 | Create/open/save scenes, structure inspection, prefab-style instancing and TileMapLayer cells |
-| [Editor](docs/tools/editor-tools.md) | 24 | 4 | 20 | Run/stop, screenshots, selection, inspector state, export templates and script buffers |
-| [Debug & Runtime](docs/tools/debug-tools.md) | 73 | 3 | 70 | Logs, debugger control, profilers, runtime probe, deterministic play checks and regression gates |
-| [Project](docs/tools/project-tools.md) | 61 | 3 | 58 | Settings, resources, input map, tests, migration scans, assets, TileSets, sprite/glTF workflows, task plans and localization |
-| [Meta](docs/tools/meta-tools.md) | 2 | — | — | Always-on tool discovery and on-demand enablement |
-| **Total** | **215** | **30** | **183** | |
+| [Node](docs/tools/node-tools.md) | 26 | 9 | 17 | 节点增删改查、层级编辑、信号、分组、锚点、批量编辑和场景审计 |
+| [Script](docs/tools/script-tools.md) | 17 | 7 | 10 | 读取/创建/修改/校验 GDScript 与 C#，Shader 校验、搜索、符号和引用 |
+| [Scene](docs/tools/scene-tools.md) | 12 | 4 | 8 | 创建/打开/保存场景、结构检查、场景实例化和 TileMapLayer 单元格 |
+| [Editor](docs/tools/editor-tools.md) | 24 | 4 | 20 | 运行/停止、截图、选择、Inspector、导出模板和脚本缓冲区 |
+| [Debug & Runtime](docs/tools/debug-tools.md) | 73 | 3 | 70 | 日志、调试器、性能分析、运行时探针、确定性游玩验证和回归门禁 |
+| [Project](docs/tools/project-tools.md) | 61 | 3 | 58 | 设置、资源、输入映射、测试、迁移扫描、资产、TileSet、精灵表/glTF 和任务计划 |
+| [Meta](docs/tools/meta-tools.md) | 2 | — | — | 常驻工具发现和按需启用 |
+| **总计** | **215** | **30** | **183** | |
 
-Only core and meta tools are visible to `tools/list` at startup. Use the MCP panel or the `enable_tools` meta tool to enable advanced tools by name, group or preset. See the [Tools Reference](docs/tools/README.md).
+启动时只有核心工具和元工具会出现在 `tools/list` 中。需要更多能力时，可在 MCP 面板中开启，也可以调用 `enable_tools` 按工具、分组或预设启用。详见 [Tools Reference](docs/tools/README.md)。
 
-## Example prompts
+## 示例提示词
 
 ```text
-Add a Camera2D to the current scene and make it follow the player.
-Create a main menu scene with Play, Options and Quit buttons.
-Read my movement script and refactor it into a state machine.
-Run the project, then report live FPS, node count and recent runtime errors.
-Enable the debugging preset, play a deterministic jump test and verify coyote time.
+在当前场景添加 Camera2D，并让它跟随玩家。
+创建一个包含 Play、Options、Quit 按钮的主菜单场景。
+读取我的移动脚本，并重构为状态机。
+运行项目，然后报告实时 FPS、节点数量和最近的运行时错误。
+启用 debugging 预设，执行一次确定性的跳跃测试并验证土狼时间。
 ```
 
-## Configuration at a glance
+## 配置速览
 
-Settings are managed in the MCP dock and persisted to `user://mcp_settings.cfg`.
+配置通过 MCP 面板管理，并持久化到 `user://mcp_settings.cfg`。
 
-| Setting | Default | Purpose |
+| 配置项 | 默认值 | 用途 |
 | --- | --- | --- |
-| `transport_mode` | `http` | `http` for HTTP/SSE, `stdio` for local-process clients |
-| `http_port` | `9080` | HTTP listener port |
-| `sse_enabled` | `true` | Enable the SSE stream used by MCP clients that support it |
-| `auth_enabled` | `false` | Require an `Authorization: Bearer <token>` header |
-| `auth_token` | `""` | Token used when auth is enabled |
-| `auto_start` | `false` | Start the server when the editor/plugin loads |
-| `security_level` | `1` | `0` permissive, `1` strict path/security checks |
-| `rate_limit` | `1000` | Requests per rate-limit window |
+| `transport_mode` | `http` | `http` 表示 HTTP/SSE，`stdio` 表示本地进程传输 |
+| `http_port` | `9080` | HTTP 监听端口 |
+| `sse_enabled` | `true` | 启用支持 SSE 的 MCP 客户端所需事件流 |
+| `auth_enabled` | `false` | 要求 `Authorization: Bearer <token>` 请求头 |
+| `auth_token` | `""` | 启用鉴权时使用的 token |
+| `auto_start` | `false` | 编辑器/插件加载时自动启动服务器 |
+| `security_level` | `1` | `0` 宽松，`1` 严格路径和安全检查 |
+| `rate_limit` | `1000` | 限流窗口内允许的请求数 |
 
-Headless launch example:
+无界面启动示例：
 
 ```bash
 godot --editor --path /path/to/project -- --mcp-server --mcp-port=9080
 ```
 
-See [Configuration](docs/configuration.md) for transports, auth, CLI overrides, client snippets and tool presets.
+更多传输、鉴权、命令行覆盖、客户端片段和工具预设见 [Configuration](docs/configuration.md)。
 
-## Requirements
+## 环境要求
 
-- Godot Engine 4.7 with the GL Compatibility renderer.
-- No runtime Node.js or Python dependency for the plugin itself.
-- `npx` is only needed when a stdio-only client uses `mcp-remote` to bridge to HTTP.
-- Python 3.8+ and Godot/GUT are only needed when running the integration and unit test suites.
+- Godot Engine 4.7，使用 GL Compatibility 渲染器。
+- 插件运行本身不依赖 Node.js 或 Python。
+- 只有 stdio-only 客户端通过 `mcp-remote` 桥接 HTTP 时才需要 `npx`。
+- 运行集成测试和 GUT 单元测试时才需要 Python 3.8+、Godot/GUT。
 
-## Documentation
+## 文档
 
-| Document | Use it for |
+| 文档 | 用途 |
 | --- | --- |
-| [Getting Started](docs/getting-started.md) | Install, enable and connect the plugin |
-| [Configuration](docs/configuration.md) | Ports, transports, auth, CLI flags, client snippets and presets |
-| [Remote & Cloud Access](docs/remote-access.md) | Cloudflare Quick Tunnel, Tailscale Funnel, ngrok and public client URLs |
-| [Architecture](docs/architecture.md) | Plugin lifecycle, server core, transports, tools, runtime probe and security model |
-| [Tools Reference](docs/tools/README.md) | Every MCP tool, tier and category |
-| [Industrialization Guide](docs/industrialization/README.md) | Planning, asset generation, deterministic playtesting and iteration loops |
-| [Testing](docs/testing.md) | GUT unit tests, Python integration tests and validation tips |
-| [Contributing](docs/contributing.md) | Coding standards, adding tools, docs checklist and PR workflow |
-| [Changelog](docs/changelog.md) | Release notes |
+| [Getting Started](docs/getting-started.md) | 安装、启用和连接插件 |
+| [Configuration](docs/configuration.md) | 端口、传输、鉴权、CLI 参数、客户端片段和预设 |
+| [Remote & Cloud Access](docs/remote-access.md) | Cloudflare Quick Tunnel、Tailscale Funnel、ngrok 和公网 URL |
+| [Architecture](docs/architecture.md) | 插件生命周期、核心服务、传输层、工具、运行时探针和安全模型 |
+| [Tools Reference](docs/tools/README.md) | 所有 MCP 工具、层级和分类 |
+| [Industrialization Guide](docs/industrialization/README.md) | 规划、资产生成、确定性游玩测试和迭代闭环 |
+| [Testing](docs/testing.md) | GUT 单元测试、Python 集成测试和验证建议 |
+| [Contributing](docs/contributing.md) | 代码规范、新增工具、文档清单和 PR 流程 |
+| [Changelog](docs/changelog.md) | 版本记录 |
 
-## Contributing
+## 贡献
 
-Issues and pull requests are welcome. Read [Contributing](docs/contributing.md) before adding tools or changing MCP behavior so code, tests, translations and docs stay in sync.
+欢迎提交 Issue 和 Pull Request。新增工具或修改 MCP 行为前，请先阅读 [Contributing](docs/contributing.md)，确保代码、测试、翻译和文档同步更新。
 
-## License
+## 许可证
 
-Released under the [MIT License](LICENSE).
+本项目基于 [MIT License](LICENSE) 发布。
 
-## Author
+## 作者
 
-**xianyu0514** (upstream original author)
+**xianyu0514**（上游原作者）
 
-This fork (`RedGD`) is maintained by **JiaHuiRed**.
+本 fork（`RedGD`）由 **JiaHuiRed** 维护。
 
-## Acknowledgments
+## 致谢
 
-- The Godot Engine team and community.
-- The Model Context Protocol specification and ecosystem.
-- AI assistant workflows pioneered by Claude and other MCP clients.
+- Godot Engine 团队和社区。
+- Model Context Protocol 规范与生态。
+- Claude 等 MCP 客户端推动的 AI 助手工作流。
 
 ---
 
-Godot MCP Native is a community plugin and is not officially affiliated with Godot Engine, Anthropic or any MCP client vendor.
+Godot MCP Native 是社区插件，与 Godot Engine、Anthropic 或任何 MCP 客户端厂商均无官方隶属关系。

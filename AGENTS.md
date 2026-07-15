@@ -116,7 +116,7 @@ addons/godot_mcp/
 2. **注册到分类器** — 在 `mcp_tool_classifier.gd` 的 `_build_classifications()` 中添加条目，然后更新 `test_mcp_tool_classifier.gd` 中的工具总数和 supplementary 计数
 3. **添加单元测试** — 在 `test/unit/tools/` 中覆盖缺失参数/无效参数/边界情况
 4. **更新翻译文件** — 在 `translations/tool_descriptions.json` 和 `translations/tool_descriptions.csv` 中添加工具描述（中英文）
-5. **更新文档** — `docs/tools/<category>-tools.md`（对应分类页，新增工具行 + 更新分组计数）、`docs/tools/README.md`（分类总数表）、根与 `addons/godot_mcp/` 下的 `README.md` / `README.zh.md`
+5. **更新文档** — `docs/tools/<category>-tools.md`（对应分类页，新增工具行 + 更新分组计数）、`docs/tools/README.md`（分类总数表）、根与 `addons/godot_mcp/` 下的 `README.md`（中文）/ `README.en.md`（英文）
 6. **验证** — 运行完整 GUT 测试套件，要求 0 失败
 
 **注意：** supplementary 工具注册后默认禁用（`enabled = (category == "core" or category == "meta")`），`tools/list` 不会返回它。用户需在 MCP 面板中手动启用，或在测试时用 `core.set_tool_enabled("tool_name", true)` 开启。`meta` 类工具（`list_tool_catalog`、`enable_tools`）始终启用，且不计入 30 核心上限；预设切换也会保留它们，供 AI 按需发现并启用其他工具。
@@ -129,7 +129,7 @@ addons/godot_mcp/
    - 在分类页表格中**新增/更新工具行**（工具名、Tier、描述）
    - 更新该分组标题中的工具计数
 2. **`docs/tools/README.md`** — 更新分类总数表（core / advanced / total）
-3. **`README.md` 和 `README.zh.md`**（项目根目录和 `addons/godot_mcp/` 下）
+3. **`README.md`（中文）和 `README.en.md`（英文）**（项目根目录和 `addons/godot_mcp/` 下）
    - 更新功能列表中的工具计数与分类计数表
 4. **`docs/architecture.md`** — 如果工具分类数量有大幅变化，更新工具注册章节的统计表
 5. **翻译文件**

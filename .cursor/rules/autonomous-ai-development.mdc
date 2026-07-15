@@ -42,7 +42,7 @@ alwaysApply: true
    - 不删除、不重命名已有 MCP 工具；新增参数一律可选并带默认值，保持旧调用仍然有效。
    - 改 `input_schema` / `output_schema` 时保持对旧客户端的兼容。
 3. **跨文件不变量保持同步**（这是最容易让模块"互不兼容"的地方）：
-   - 工具数量：`mcp_tool_classifier.gd` ↔ `test_mcp_tool_classifier.gd` ↔ `README.md` / `README.zh.md` ↔ `docs/tools/*` 的计数必须一致。
+   - 工具数量：`mcp_tool_classifier.gd` ↔ `test_mcp_tool_classifier.gd` ↔ `README.md` / `README.en.md` ↔ `docs/tools/*` 的计数必须一致。
    - 翻译：新增/改名工具同步 `translations/tool_descriptions.json` 与 `.csv`。
    - 分类：core 上限 30 不被无意突破；advanced 工具默认 `supplementary`。
 4. **不留半成品**：不提交会让项目无法导入或让相关测试变红的中间状态。

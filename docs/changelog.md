@@ -9,6 +9,8 @@ All notable user-facing changes are tracked here.
 ### 说明
 - 未改动插件功能/工具集，仅在 README.md / README.zh.md / AGENTS.md 增加 fork 归属说明
 - 后续本 fork 特有改动将沿用 RedMon 的 changelog 格式（`## [x.y.z] - YYYY-MM-DD` + 中文分类小节）记录；upstream 原有条目保持不变
+- 2026-07-15：`addons/godot_mcp/plugin.cfg` 的 `author` 字段追加 fork 标注，Godot 编辑器插件列表内可见
+- 2026-07-15：README 主次调整 — 中文版转正为 `README.md`（原 `README.zh.md`），英文版改名为 `README.en.md`（根目录与 `addons/godot_mcp/` 下同步），互相跳转链接同步更新
 
 ## Unreleased
 
