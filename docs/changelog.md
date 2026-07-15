@@ -2,6 +2,12 @@
 
 All notable user-facing changes are tracked here.
 
+## [RedGD v0.0.4] - 2026-07-15
+
+### 性能
+- `mcp_debugger_bridge.gd` 的 `_refresh_script_debugger_connections`：此前被 `get_sessions_info`/`send_debugger_message`/`request_stack_dump`/`request_stack_frame_vars`/`request_evaluate`/`get_captured_messages` 等几乎所有对外方法无条件调用，对整个编辑器 UI 树做一次全量 DFS 找 `ScriptEditorDebugger` 节点；`wait_for_probe_ready` 的逐帧轮询循环因此在一次等待里可能触发上百次全树扫描。现在加了 250ms 节流（`force=true` 保留给新会话建立时的即时刷新），非强制调用在节流窗口内直接跳过扫描。
+- `task_plan_store.gd`：`_find_index`/`has_task`/`get_task` 从线性扫描任务数组改为懒重建的 id→索引 Dictionary 缓存（结构变化时打版本号，下次查询才重建，避免逐次增删都要патch索引)。`next_actionable()` 对每个任务的每个依赖调 `get_task()`，密集依赖图下从 O(n²) 降到 O(n)；`_next_auto_id()` 批量建任务时的重复 `has_task` 检查同样受益。这次**没有**改动 `manage_task_plan` 工具层每次调用整文件读写 JSON 的部分——task plan 文件通常很小（几十个任务量级），单次调用的全量读写本身不是热点，跨调用缓存反而会引入陈旧数据风险（比如用户手动编辑了 `task_plan.json`），权衡后判断不值得做。
+
 ## [RedGD v0.0.3] - 2026-07-15
 
 ### 性能

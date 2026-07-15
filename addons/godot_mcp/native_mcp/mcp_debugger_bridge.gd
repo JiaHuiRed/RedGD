@@ -31,13 +31,15 @@ var _evaluation_variables_references: Dictionary = {}
 var _pending_stack_vars_frame: int = 0
 var _message_sequence: int = 0
 var _probe_ready_session_ids: Dictionary = {}
+var _connections_refresh_interval_ms: int = 250
+var _last_connections_refresh_ms: int = -1000000000
 
 func get_message_sequence() -> int:
 	return _message_sequence
 
 func _setup_session(session_id: int) -> void:
 	_probe_ready_session_ids.erase(session_id)
-	call_deferred("_refresh_script_debugger_connections")
+	call_deferred("_refresh_script_debugger_connections", true)
 
 func _has_capture(capture: String) -> bool:
 	return _capture_prefixes.has("*") or _capture_prefixes.has(capture)
@@ -356,7 +358,11 @@ func request_runtime_message(message: String, data: Array = [], response_message
 		"response_messages": response_messages
 	}
 
-func _refresh_script_debugger_connections() -> void:
+func _refresh_script_debugger_connections(force: bool = false) -> void:
+	var now_ms: int = Time.get_ticks_msec()
+	if not force and now_ms - _last_connections_refresh_ms < _connections_refresh_interval_ms:
+		return
+	_last_connections_refresh_ms = now_ms
 	var tree: SceneTree = Engine.get_main_loop() as SceneTree
 	if not tree:
 		return

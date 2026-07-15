@@ -66,11 +66,20 @@ const PERF_BUDGET_COMPARATORS: Dictionary = {
 
 var plan: Dictionary
 
+# Lazily-rebuilt id -> array-index cache for _find_index. Any structural change
+# to the tasks array (append/remove/reassigning `plan`) bumps _tasks_version;
+# the cache rebuilds itself (a single O(n) pass) the next time it's read, so it
+# can never observe a stale mapping while staying free of per-mutation patching.
+var _id_index: Dictionary = {}
+var _id_index_version: int = -1
+var _tasks_version: int = 0
+
 func _init(initial: Dictionary = {}) -> void:
 	if initial.is_empty():
 		plan = new_plan("")
 	else:
 		plan = initial
+	_tasks_version += 1
 
 # --- construction -----------------------------------------------------------
 
@@ -101,11 +110,16 @@ func has_task(task_id: String) -> bool:
 	return _find_index(task_id) != -1
 
 func _find_index(task_id: String) -> int:
-	var tasks: Array = _tasks()
-	for i in tasks.size():
-		if str((tasks[i] as Dictionary).get("id", "")) == task_id:
-			return i
-	return -1
+	return int(_id_index_ref().get(task_id, -1))
+
+func _id_index_ref() -> Dictionary:
+	if _id_index_version != _tasks_version:
+		_id_index.clear()
+		var tasks: Array = _tasks()
+		for i in tasks.size():
+			_id_index[str((tasks[i] as Dictionary).get("id", ""))] = i
+		_id_index_version = _tasks_version
+	return _id_index
 
 func get_task(task_id: String) -> Dictionary:
 	var idx: int = _find_index(task_id)
@@ -272,6 +286,7 @@ static func dod_all_met(task: Dictionary) -> bool:
 func init_plan(goal: String, reset: bool) -> Dictionary:
 	if reset or not (plan.get("tasks") is Array):
 		plan = new_plan(goal)
+		_tasks_version += 1
 	else:
 		plan["goal"] = goal
 		_touch()
@@ -328,9 +343,11 @@ func add_task(fields: Dictionary) -> Dictionary:
 	}
 	# Detect cycles created by this task before committing it.
 	_tasks().append(task)
+	_tasks_version += 1
 	var cycle: Dictionary = _detect_cycle()
 	if cycle.has("error"):
 		_tasks().pop_back()
+		_tasks_version += 1
 		return cycle
 	_touch()
 	return {"status": "ok", "task": task}
@@ -506,6 +523,7 @@ func remove_task(task_id: String) -> Dictionary:
 	if idx == -1:
 		return {"error": "task '%s' not found" % task_id}
 	_tasks().remove_at(idx)
+	_tasks_version += 1
 	# Strip dangling references so the graph stays consistent.
 	for task in _tasks():
 		var deps: Array = (task as Dictionary).get("depends_on", [])
