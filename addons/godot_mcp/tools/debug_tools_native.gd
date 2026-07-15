@@ -1717,7 +1717,7 @@ func _tool_await_scene_ready(params: Dictionary) -> Dictionary:
 			if Time.get_ticks_msec() + poll_interval_ms < deadline_ms:
 				var tree: SceneTree = Engine.get_main_loop() as SceneTree
 				if tree:
-					await tree.process_frame
+					await tree.create_timer(poll_interval_ms / 1000.0).timeout
 				else:
 					OS.delay_msec(poll_interval_ms)
 				continue
@@ -1746,7 +1746,7 @@ func _tool_await_scene_ready(params: Dictionary) -> Dictionary:
 		if Time.get_ticks_msec() + poll_interval_ms < deadline_ms:
 			var tree: SceneTree = Engine.get_main_loop() as SceneTree
 			if tree:
-				await tree.process_frame
+				await tree.create_timer(poll_interval_ms / 1000.0).timeout
 			else:
 				OS.delay_msec(poll_interval_ms)
 
@@ -2806,7 +2806,7 @@ func _tool_await_runtime_condition(params: Dictionary) -> Dictionary:
 		if Time.get_ticks_msec() + poll_interval_ms < deadline_ms:
 			var tree: SceneTree = Engine.get_main_loop() as SceneTree
 			if tree:
-				await tree.process_frame
+				await tree.create_timer(poll_interval_ms / 1000.0).timeout
 			else:
 				OS.delay_msec(poll_interval_ms)
 	

@@ -2,7 +2,7 @@
 
 [![Godot](https://img.shields.io/badge/Godot-4.7-478CBF?logo=godot-engine&logoColor=white)](https://godotengine.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/RedGD%20version-0.0.2-orange.svg)](docs/changelog.md)
+[![Version](https://img.shields.io/badge/RedGD%20version-0.0.3-orange.svg)](docs/changelog.md)
 [![Tools](https://img.shields.io/badge/MCP%20tools-215-blue.svg)](docs/tools/README.md)
 [![Fork](https://img.shields.io/badge/fork-RedGD-9cf.svg)](https://github.com/JiaHuiRed/RedGD)
 

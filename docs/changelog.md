@@ -2,6 +2,12 @@
 
 All notable user-facing changes are tracked here.
 
+## [RedGD v0.0.3] - 2026-07-15
+
+### 性能
+- `mcp_runtime_probe.gd` 的 `_get_runtime_info`/`_get_performance_snapshot`：`node_count` 不再手写递归遍历整棵场景树（`_count_nodes`，每次调用都是一次全树 DFS），改用引擎内置的 `Performance.OBJECT_NODE_COUNT` 监控值，`ping`/`get_runtime_info`/`get_performance_snapshot` 这类高频轮询调用不再自我扰动被测游戏的帧率。文件内已无调用方的 `_count_nodes` 一并移除。
+- `debug_tools_native.gd` 的 `await_scene_ready`/`await_runtime_condition`：内部轮询循环此前不管声明的 `poll_interval_ms`（200ms/500ms）是多少，实际都靠 `await tree.process_frame` 按编辑器帧率（约 60Hz）轮询，向运行中的游戏发送 probe IPC 请求的频率比预期高一个数量级；改为 `await tree.create_timer(poll_interval_ms / 1000.0).timeout`，轮询间隔与声明值一致。
+
 ## [RedGD v0.0.2] - 2026-07-15
 
 > upstream（xianyu0514/GodotMcp-XY）两周未更新，不排除停止维护；本 fork 起使用独立于 upstream 的版本号（`0.0.x`，记录在 `plugin.cfg` 的 `version` 字段），后续 fork 特有改动都会走这个版本序列。

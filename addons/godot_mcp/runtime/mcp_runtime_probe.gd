@@ -144,7 +144,7 @@ func _get_runtime_info() -> Dictionary:
 		"process_frames": Engine.get_process_frames(),
 		"debugger_active": EngineDebugger.is_active(),
 		"current_scene": str(get_tree().current_scene.get_path()) if get_tree().current_scene else "",
-		"node_count": _count_nodes(get_tree().root)
+		"node_count": int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT))
 	}
 
 func _get_performance_snapshot() -> Dictionary:
@@ -159,7 +159,7 @@ func _get_performance_snapshot() -> Dictionary:
 		"memory_static_bytes": int(memory_static),
 		"memory_static_mb": memory_static / 1024.0 / 1024.0,
 		"current_scene": str(get_tree().current_scene.get_path()) if get_tree().current_scene else "",
-		"node_count": _count_nodes(get_tree().root)
+		"node_count": int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT))
 	}
 
 func _get_memory_sample(sample_index: int) -> Dictionary:
@@ -1597,12 +1597,6 @@ func _serialize_value(value: Variant) -> Variant:
 			return result
 		_:
 			return str(value)
-
-func _count_nodes(node: Node) -> int:
-	var count: int = 1
-	for child in node.get_children():
-		count += _count_nodes(child)
-	return count
 
 func _variant_to_vector2i(value: Variant) -> Vector2i:
 	if value is Vector2i:
