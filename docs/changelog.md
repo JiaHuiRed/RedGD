@@ -2,6 +2,14 @@
 
 All notable user-facing changes are tracked here.
 
+## [RedGD v0.0.2] - 2026-07-15
+
+> upstream（xianyu0514/GodotMcp-XY）两周未更新，不排除停止维护；本 fork 起使用独立于 upstream 的版本号（`0.0.x`，记录在 `plugin.cfg` 的 `version` 字段），后续 fork 特有改动都会走这个版本序列。
+
+### 性能
+- `mcp_server_native.gd` 的 `_on_message_received`/`_on_response_sent`：日志级别低于 DEBUG 时不再无条件 `JSON.stringify` 整包消息，且面板日志与调试日志共用同一次序列化结果，而不是各序列化一次。这是每一次 MCP 请求/响应都会走的路径。
+- `mcp_runtime_probe.gd` 的 `get_runtime_memory_trend`：采样间隔等待由 `OS.delay_msec()`（阻塞整个游戏主线程）改为 `await get_tree().create_timer(...).timeout`（协程等待），不再在采样期间冻结被测游戏本身。
+
 ## [RedGD Fork] - 2026-07-13
 
 > 个人品牌化标注：fork 自 xianyu0514/GodotMcp-XY（upstream 保持同步），由 JiaHuiRed 维护，主要配合 RedMon 项目开发时驱动 Godot 编辑器使用。

@@ -934,14 +934,24 @@ func _on_server_stopped() -> void:
 			_main_panel.call_deferred("refresh")
 
 func _on_message_received(message: Dictionary) -> void:
-	_log_debug("Message received: " + JSON.stringify(message))
-	if _main_panel and _main_panel.has_method("update_log"):
-		_main_panel.update_log("[RECV] " + JSON.stringify(message))
+	var wants_panel_log: bool = _main_panel and _main_panel.has_method("update_log")
+	if log_level < 3 and not wants_panel_log:
+		return
+	var message_str: String = JSON.stringify(message)
+	if log_level >= 3:
+		_log_debug("Message received: " + message_str)
+	if wants_panel_log:
+		_main_panel.update_log("[RECV] " + message_str)
 
 func _on_response_sent(response: Dictionary) -> void:
-	_log_debug("Response sent: " + JSON.stringify(response))
-	if _main_panel and _main_panel.has_method("update_log"):
-		_main_panel.update_log("[SENT] " + JSON.stringify(response))
+	var wants_panel_log: bool = _main_panel and _main_panel.has_method("update_log")
+	if log_level < 3 and not wants_panel_log:
+		return
+	var response_str: String = JSON.stringify(response)
+	if log_level >= 3:
+		_log_debug("Response sent: " + response_str)
+	if wants_panel_log:
+		_main_panel.update_log("[SENT] " + response_str)
 
 func _on_tool_started(tool_name: String, params: Dictionary) -> void:
 	_log_info("Tool started: " + tool_name)

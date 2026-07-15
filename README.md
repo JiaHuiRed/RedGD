@@ -2,13 +2,13 @@
 
 [![Godot](https://img.shields.io/badge/Godot-4.7-478CBF?logo=godot-engine&logoColor=white)](https://godotengine.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.0.7--pre1-orange.svg)](docs/changelog.md)
+[![Version](https://img.shields.io/badge/RedGD%20version-0.0.2-orange.svg)](docs/changelog.md)
 [![Tools](https://img.shields.io/badge/MCP%20tools-215-blue.svg)](docs/tools/README.md)
 [![Fork](https://img.shields.io/badge/fork-RedGD-9cf.svg)](https://github.com/JiaHuiRed/RedGD)
 
 > English documentation: [README.en.md](README.en.md)。
 
-> **Fork 说明**：本仓库 `RedGD` 是 [xianyu0514/GodotMcp-XY](https://github.com/xianyu0514/GodotMcp-XY) 的个人 fork，由 [JiaHuiRed](https://github.com/JiaHuiRed) 维护，持续同步上游修复，主要配合 [RedMon](https://github.com/JiaHuiRed/RedMon) 项目开发时驱动 Godot 编辑器使用。
+> **Fork 说明**：本仓库 `RedGD` 是 [xianyu0514/GodotMcp-XY](https://github.com/xianyu0514/GodotMcp-XY) 的个人 fork，由 [JiaHuiRed](https://github.com/JiaHuiRed) 维护，主要配合 [RedMon](https://github.com/JiaHuiRed/RedMon) 项目开发时驱动 Godot 编辑器使用。自 `0.0.2` 起使用独立于 upstream 的版本号（`0.0.x`），fork 特有改动记录在 [Changelog](docs/changelog.md) 的 `RedGD vX.Y.Z` 分段中。
 
 **让 AI 直接驱动 Godot。** Godot MCP Native 是一个 Godot 4.7 编辑器插件，会在 Godot 编辑器内部运行 [Model Context Protocol](https://modelcontextprotocol.io)（MCP）服务器。Claude、Cursor、Cline、Trae、OpenCode、Codex 等 MCP 客户端可以通过标准协议读取和修改场景、脚本、节点、资源，甚至检查正在运行的游戏。
 
