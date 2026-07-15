@@ -77,6 +77,7 @@ var _section_titles: Array = []
 
 var _tab_container: TabContainer = null
 var _debounce_timer: Timer = null
+var _search_debounce_timer: Timer = null
 var _group_widgets: Dictionary = {}
 var _tools_search_edit: LineEdit = null
 var _core_group_names: Array = []
@@ -132,11 +133,17 @@ func _ready() -> void:
 	_debounce_timer.one_shot = true
 	_debounce_timer.timeout.connect(_on_debounce_timeout)
 	add_child(_debounce_timer)
+	_search_debounce_timer = Timer.new()
+	_search_debounce_timer.one_shot = true
+	_search_debounce_timer.timeout.connect(_on_search_debounce_timeout)
+	add_child(_search_debounce_timer)
 
 func _exit_tree() -> void:
 	_flush_log_to_file()
 	if _debounce_timer:
 		_debounce_timer.stop()
+	if _search_debounce_timer:
+		_search_debounce_timer.stop()
 	if _tunnel_poll_timer and is_instance_valid(_tunnel_poll_timer):
 		_tunnel_poll_timer.stop()
 	if _tunnel_manager and _tunnel_manager.is_running():
@@ -1688,6 +1695,12 @@ func _sync_scope_chips() -> void:
 		_scope_chips[key].set_selected(_selected_category == key)
 
 func _on_tools_search_changed(_new_text: String) -> void:
+	if _search_debounce_timer:
+		_search_debounce_timer.start(0.15)
+	else:
+		_apply_view()
+
+func _on_search_debounce_timeout() -> void:
 	_apply_view()
 
 func _apply_view() -> void:

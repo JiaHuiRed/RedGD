@@ -3075,7 +3075,7 @@ func _register_scan_missing_resource_dependencies(server_core: RefCounted) -> vo
 						  output_schema, annotations,
 						  "supplementary", "Project-Advanced")
 
-func _tool_scan_missing_resource_dependencies(params: Dictionary) -> Dictionary:
+func _tool_scan_missing_resource_dependencies(params: Dictionary, precomputed_data: Variant = null) -> Dictionary:
 	var search_path: String = str(params.get("search_path", "res://")).strip_edges()
 	var max_results: int = max(1, int(params.get("max_results", 200)))
 
@@ -3084,16 +3084,13 @@ func _tool_scan_missing_resource_dependencies(params: Dictionary) -> Dictionary:
 		return {"error": "Invalid path: " + validation["error"]}
 	search_path = validation["sanitized"]
 
-	var dependency_extensions: Array[String] = [
-		".tscn", ".scn", ".tres", ".res", ".gd", ".cs", ".gdshader", ".material"
-	]
-	var resources: Array[String] = []
-	_collect_resources(search_path, dependency_extensions, resources)
-	resources.sort()
+	var data: Dictionary = precomputed_data if precomputed_data is Dictionary else _scan_resource_dependency_data(search_path)
+	var resources: Array = data["resources"]
+	var dependencies_by_resource: Dictionary = data["dependencies_by_resource"]
 
 	var issues: Array = []
 	for resource_path in resources:
-		var dependencies: Array = _parse_resource_dependencies(resource_path)
+		var dependencies: Array = dependencies_by_resource.get(resource_path, [])
 		for dependency in dependencies:
 			if bool(dependency.get("missing", false)):
 				issues.append({
@@ -3160,7 +3157,7 @@ func _register_scan_cyclic_resource_dependencies(server_core: RefCounted) -> voi
 						  output_schema, annotations,
 						  "supplementary", "Project-Advanced")
 
-func _tool_scan_cyclic_resource_dependencies(params: Dictionary) -> Dictionary:
+func _tool_scan_cyclic_resource_dependencies(params: Dictionary, precomputed_data: Variant = null) -> Dictionary:
 	var search_path: String = str(params.get("search_path", "res://")).strip_edges()
 	var max_results: int = max(1, int(params.get("max_results", 100)))
 
@@ -3169,16 +3166,13 @@ func _tool_scan_cyclic_resource_dependencies(params: Dictionary) -> Dictionary:
 		return {"error": "Invalid path: " + validation["error"]}
 	search_path = validation["sanitized"]
 
-	var dependency_extensions: Array[String] = [
-		".tscn", ".scn", ".tres", ".res", ".gd", ".cs", ".gdshader", ".material"
-	]
-	var resources: Array[String] = []
-	_collect_resources(search_path, dependency_extensions, resources)
-	resources.sort()
+	var data: Dictionary = precomputed_data if precomputed_data is Dictionary else _scan_resource_dependency_data(search_path)
+	var resources: Array = data["resources"]
+	var dependencies_by_resource: Dictionary = data["dependencies_by_resource"]
 
 	var graph: Dictionary = {}
 	for resource_path in resources:
-		graph[resource_path] = _collect_existing_dependency_paths(resource_path)
+		graph[resource_path] = _existing_dependency_paths_from(dependencies_by_resource.get(resource_path, []))
 
 	var issues: Array = []
 	var seen_cycles: Dictionary = {}
@@ -3250,9 +3244,31 @@ func _parse_resource_dependencies(resource_path: String) -> Array:
 
 	return dependencies
 
-func _collect_existing_dependency_paths(resource_path: String) -> Array:
+# Collects the project's dependency-tracked resources and parses each one's
+# dependencies exactly once. Shared by scan_missing_resource_dependencies,
+# scan_cyclic_resource_dependencies and audit_project_health so a single
+# audit_project_health call walks the resource tree and parses dependencies
+# once instead of once per sub-scan.
+func _scan_resource_dependency_data(search_path: String) -> Dictionary:
+	var dependency_extensions: Array[String] = [
+		".tscn", ".scn", ".tres", ".res", ".gd", ".cs", ".gdshader", ".material"
+	]
+	var resources: Array[String] = []
+	_collect_resources(search_path, dependency_extensions, resources)
+	resources.sort()
+
+	var dependencies_by_resource: Dictionary = {}
+	for resource_path in resources:
+		dependencies_by_resource[resource_path] = _parse_resource_dependencies(resource_path)
+
+	return {
+		"resources": resources,
+		"dependencies_by_resource": dependencies_by_resource
+	}
+
+func _existing_dependency_paths_from(dependencies: Array) -> Array:
 	var paths: Array = []
-	for dependency in _parse_resource_dependencies(resource_path):
+	for dependency in dependencies:
 		if bool(dependency.get("missing", false)):
 			continue
 		var resolved_path: String = str(dependency.get("resolved_path", ""))
@@ -3490,17 +3506,24 @@ func _tool_audit_project_health(params: Dictionary) -> Dictionary:
 	if broken_scripts_result.has("error"):
 		return broken_scripts_result
 
+	var path_validation: Dictionary = PathValidator.validate_directory_path(search_path)
+	if not path_validation["valid"]:
+		return {"error": "Invalid path: " + path_validation["error"]}
+	# Walk the resource tree and parse each resource's dependencies once, shared
+	# by both sub-scans below instead of each re-walking/re-parsing everything.
+	var dependency_data: Dictionary = _scan_resource_dependency_data(path_validation["sanitized"])
+
 	var missing_dependencies_result: Dictionary = _tool_scan_missing_resource_dependencies({
 		"search_path": search_path,
 		"max_results": max_results
-	})
+	}, dependency_data)
 	if missing_dependencies_result.has("error"):
 		return missing_dependencies_result
 
 	var cyclic_dependencies_result: Dictionary = _tool_scan_cyclic_resource_dependencies({
 		"search_path": search_path,
 		"max_results": max_results
-	})
+	}, dependency_data)
 	if cyclic_dependencies_result.has("error"):
 		return cyclic_dependencies_result
 

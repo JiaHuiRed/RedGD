@@ -2,6 +2,14 @@
 
 All notable user-facing changes are tracked here.
 
+## [RedGD v0.0.5] - 2026-07-15
+
+> 这一批收尾本次性能审查里议定的 8 项高优先级修复（v0.0.2 起共 4 个批次）。
+
+### 性能
+- `project_tools_native.gd` 的 `audit_project_health`：此前内部依次调用 `scan_missing_resource_dependencies` 和 `scan_cyclic_resource_dependencies` 两个独立工具函数，二者各自对整个 `search_path` 做一次资源树扫描，并各自对每个资源重新调用 `ResourceLoader.get_dependencies` 解析依赖——一次"体检"实际上把资源树连带每个资源的依赖解析都重复了一遍。新增共享的 `_scan_resource_dependency_data` 一次性完成资源收集与依赖解析，`audit_project_health` 算一份共享结果传给两个子扫描；两个工具单独调用时（不经 audit）行为不变，各自仍独立重新扫描。
+- `mcp_panel_native.gd` 工具搜索框：此前每次按键都立即触发对全部 215 个工具的过滤与统计（`_apply_view` → `_apply_category_view`/`_apply_search_view` + `_update_detail_count` + `_ensure_tool_selection`），打字快时是连续多趟全量扫描。新增独立的 150ms 防抖 Timer（与设置保存复用的 `_debounce_timer` 分开，避免互相触发无关的 `save_tool_states`），停止输入后才真正应用过滤。
+
 ## [RedGD v0.0.4] - 2026-07-15
 
 ### 性能
