@@ -2,6 +2,17 @@
 
 All notable user-facing changes are tracked here.
 
+## [RedGD v0.0.6] - 2026-07-15
+
+> 中优先级性能修复第一批（共两批）：消灭剩余的字符串逐字符 `+=` 拼接（O(n²)），改成 `PackedStringArray` 累积 + 一次性 `join`。均为纯机械改写，控制流与逐字符输出顺序不变，只换了累加器类型。
+
+### 性能
+- `utils/script_sandbox.gd` `_strip_strings_and_comments`：三引号/单双引号字符串字面量内部的缓冲区（`buf3`/`buf`）此前仍是逐字符 `+=`，是上一轮 O(n) 优化漏掉的角落——外层代码剥离已经是 `PackedStringArray+join`，字符串内容缓冲却没跟着改。
+- `tools/project_tools_native.gd` `_sanitize_cli_output`（`run_project_test` 等工具用来清洗测试运行 stdout）：两趟扫描（ANSI 转义过滤 + 残留 CSI 片段清理）都改成缓冲区累积。
+- `tools/project_tools_native.gd` `_i18n_unescape`：`manage_localization` 提取阶段对每条可翻译文本做转义还原，大项目可能有上千条文本触发。
+- `tools/editor_tools_native.gd` `_sanitize_cli_output`（导出/冒烟测试日志清洗，与 project_tools_native.gd 同名但各自独立的一份）。
+- `tools/script_tools_native.gd` `_strip_shader_comments`：每次 `validate_shader` 都会对整份 shader 源码剥离注释一遍。
+
 ## [RedGD v0.0.5] - 2026-07-15
 
 > 这一批收尾本次性能审查里议定的 8 项高优先级修复（v0.0.2 起共 4 个批次）。

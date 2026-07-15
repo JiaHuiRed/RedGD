@@ -1138,19 +1138,22 @@ func _run_python_project_test(test_path: String, absolute_test_path: String) -> 
 # Defense-in-depth: even if the subprocess doesn't use colors, this protects
 # against any other control character in stdout.
 func _sanitize_cli_output(text: String) -> String:
-	var sanitized: String = ""
+	# Both passes accumulate into a PackedStringArray and join once at the end;
+	# `+= String.chr(...)` per character is O(n^2) on long CLI output because
+	# each concatenation reallocates the whole string.
+	var sanitized_parts: PackedStringArray = PackedStringArray()
 	var in_escape: bool = false
 	var i: int = 0
 	while i < text.length():
 		var codepoint: int = text.unicode_at(i)
-		
+
 		# --- Handle ANSI escape sequences ---
 		# ESC (27) starts an ANSI sequence: ESC[X... or ESC[X...letter
 		if codepoint == 27:
 			in_escape = true
 			i += 1
 			continue
-		
+
 		# Inside an escape sequence: skip everything until a letter (A-Z/a-z) ends it
 		if in_escape:
 			var is_letter: bool = (codepoint >= 65 and codepoint <= 90) or (codepoint >= 97 and codepoint <= 122)
@@ -1163,7 +1166,7 @@ func _sanitize_cli_output(text: String) -> String:
 					continue  # Re-process this potential start
 			i += 1
 			continue
-		
+
 		# --- Filter control characters ---
 		var keep_char: bool = codepoint >= 32 and codepoint != 127
 		if codepoint == 9 or codepoint == 10 or codepoint == 13:
@@ -1173,14 +1176,16 @@ func _sanitize_cli_output(text: String) -> String:
 			keep_char = false
 		# Unicode Replacement Character U+FFFD (65533) — keep, not a control char
 		if keep_char:
-			sanitized += String.chr(codepoint)
+			sanitized_parts.append(String.chr(codepoint))
 		i += 1
-	
+
+	var sanitized: String = "".join(sanitized_parts)
+
 	# Second pass: clean up any residual CSI fragments like "[31m" or "[0m"
 	# that remain if an ESC was consumed by another layer before reaching us.
 	# CSI pattern: '[' followed by one or more params (digits/semicolons), then a letter.
 	# Uses lookahead to avoid false positives (e.g. "Array[0]" or "[Passed]").
-	var cleaned: String = ""
+	var cleaned_parts: PackedStringArray = PackedStringArray()
 	var j: int = 0
 	while j < sanitized.length():
 		var c: int = sanitized.unicode_at(j)
@@ -1201,18 +1206,18 @@ func _sanitize_cli_output(text: String) -> String:
 					break
 				else:
 					# Not a CSI sequence — keep the '['
-					cleaned += String.chr(91)
+					cleaned_parts.append(String.chr(91))
 					j += 1
 					break
 			if scan_pos >= sanitized.length():
 				# Reached end without completing a CSI sequence
-				cleaned += String.chr(91)
+				cleaned_parts.append(String.chr(91))
 				j += 1
 			continue
-		cleaned += String.chr(c)
+		cleaned_parts.append(String.chr(c))
 		j += 1
-	
-	return cleaned
+
+	return "".join(cleaned_parts)
 
 func _find_python_executable() -> String:
 	var test_output: Array = []
@@ -8875,7 +8880,9 @@ func _i18n_unescape(value: String) -> String:
 	# .tscn / GDScript 字符串字面量的常见转义还原。
 	# 单遍扫描：遇到反斜杠时按下一个字符决定替换，避免多遍 replace 把
 	# `\\n`（转义反斜杠 + 字母 n）误判成换行。
-	var out: String = ""
+	# 累积进 PackedStringArray 最后 join 一次；`out += ...` 逐字符拼接在长文本
+	# 上是 O(n^2)，每次拼接都要重新分配整个字符串。
+	var out_parts: PackedStringArray = PackedStringArray()
 	var i: int = 0
 	var n: int = value.length()
 	while i < n:
@@ -8884,22 +8891,22 @@ func _i18n_unescape(value: String) -> String:
 			var nxt: String = value[i + 1]
 			match nxt:
 				"n":
-					out += "\n"
+					out_parts.append("\n")
 				"t":
-					out += "\t"
+					out_parts.append("\t")
 				"\"":
-					out += "\""
+					out_parts.append("\"")
 				"'":
-					out += "'"
+					out_parts.append("'")
 				"\\":
-					out += "\\"
+					out_parts.append("\\")
 				_:
-					out += c + nxt
+					out_parts.append(c + nxt)
 			i += 2
 		else:
-			out += c
+			out_parts.append(c)
 			i += 1
-	return out
+	return "".join(out_parts)
 
 func _i18n_extract(params: Dictionary) -> Dictionary:
 	var scan_dir: String = str(params.get("scan_dir", "res://")).strip_edges()

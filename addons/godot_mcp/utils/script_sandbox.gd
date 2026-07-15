@@ -249,7 +249,11 @@ static func _strip_strings_and_comments(code: String) -> Dictionary:
 		if (c == "\"" or c == "'") and i + 2 < n and code[i + 1] == c and code[i + 2] == c:
 			var quote3: String = c
 			i += 3
-			var buf3: String = ""
+			# Same O(n^2)-avoidance as out_parts above: accumulate into a
+			# PackedStringArray and join once instead of `buf3 += code[i]` per
+			# character, which would reallocate the whole literal on long
+			# triple-quoted strings (e.g. embedded JSON/base64 blobs).
+			var buf3_parts: PackedStringArray = PackedStringArray()
 			while i < n:
 				if code[i] == quote3 and i + 2 < n and code[i + 1] == quote3 and code[i + 2] == quote3:
 					i += 3
@@ -257,9 +261,9 @@ static func _strip_strings_and_comments(code: String) -> Dictionary:
 				if i + 2 >= n and code[i] == quote3:
 					i = n
 					break
-				buf3 += code[i]
+				buf3_parts.append(code[i])
 				i += 1
-			literals.append(buf3)
+			literals.append("".join(buf3_parts))
 			out_parts.append(" ")
 			continue
 
@@ -267,16 +271,16 @@ static func _strip_strings_and_comments(code: String) -> Dictionary:
 		if c == "\"" or c == "'":
 			var quote: String = c
 			i += 1
-			var buf: String = ""
+			var buf_parts: PackedStringArray = PackedStringArray()
 			while i < n and code[i] != quote:
 				if code[i] == "\\" and i + 1 < n:
-					buf += code[i + 1]
+					buf_parts.append(code[i + 1])
 					i += 2
 					continue
-				buf += code[i]
+				buf_parts.append(code[i])
 				i += 1
 			i += 1  # 跳过结束引号
-			literals.append(buf)
+			literals.append("".join(buf_parts))
 			out_parts.append(" ")
 			continue
 

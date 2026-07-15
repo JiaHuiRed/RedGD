@@ -1251,7 +1251,9 @@ func _find_export_preset(presets: Array, preset_name: String) -> Dictionary:
 	return {}
 
 func _sanitize_cli_output(text: String) -> String:
-	var sanitized: String = ""
+	# Accumulate into a PackedStringArray and join once; `+= String.chr(...)`
+	# per character is O(n^2) on long export/smoke-test CLI output.
+	var sanitized_parts: PackedStringArray = PackedStringArray()
 	for i in range(text.length()):
 		var codepoint: int = text.unicode_at(i)
 		var keep_char: bool = codepoint >= 32 and codepoint != 127
@@ -1260,8 +1262,8 @@ func _sanitize_cli_output(text: String) -> String:
 		if codepoint >= 0xE000 and codepoint <= 0xF8FF:
 			keep_char = false
 		if keep_char:
-			sanitized += String.chr(codepoint)
-	return sanitized
+			sanitized_parts.append(String.chr(codepoint))
+	return "".join(sanitized_parts)
 
 # ============================================================================
 # set_editor_setting - 设置编辑器属性

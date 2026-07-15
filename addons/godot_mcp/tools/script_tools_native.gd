@@ -2669,7 +2669,9 @@ func _strip_shader_comments(code: String) -> String:
 	# returned string has the same length/line layout as the input. This lets
 	# line-number-based detection (shader_type / render_mode) and the sentinel
 	# injection run on a comment-free view without shifting any line indices.
-	var result: String = ""
+	# Accumulates into a PackedStringArray and joins once; `result += ...` per
+	# character is O(n^2) on long shader sources.
+	var result_parts: PackedStringArray = PackedStringArray()
 	var i: int = 0
 	var n: int = code.length()
 	while i < n:
@@ -2678,19 +2680,19 @@ func _strip_shader_comments(code: String) -> String:
 		if c == "/" and nxt == "/":
 			# line comment: blank to end of line, keep the newline
 			while i < n and code[i] != "\n":
-				result += " "
+				result_parts.append(" ")
 				i += 1
 		elif c == "/" and nxt == "*":
 			# block comment: blank every char but preserve newlines
-			result += "  "
+			result_parts.append("  ")
 			i += 2
 			while i < n and not (code[i] == "*" and i + 1 < n and code[i + 1] == "/"):
-				result += ("\n" if code[i] == "\n" else " ")
+				result_parts.append("\n" if code[i] == "\n" else " ")
 				i += 1
 			if i < n:
-				result += "  "
+				result_parts.append("  ")
 				i += 2
 		else:
-			result += c
+			result_parts.append(c)
 			i += 1
-	return result
+	return "".join(result_parts)
