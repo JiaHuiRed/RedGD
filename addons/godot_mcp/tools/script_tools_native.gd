@@ -763,6 +763,35 @@ func _index_gdscript_symbols(script_path: String, content: String) -> Dictionary
 		"symbol_count": functions.size() + signals.size() + properties.size() + constants.size()
 	}
 
+# Process-lifetime cache of the C# symbol-scan regexes, shared by
+# _index_csharp_symbols and _find_csharp_symbol_definitions (identical
+# pattern set). These patterns are fixed, so they only need to compile once
+# instead of once per .cs file scanned — list_project_script_symbols /
+# find_script_symbol_references over a project with many C# files would
+# otherwise recompile the same 5 patterns for every file.
+static var _csharp_symbol_regex_cache: Dictionary = {}
+
+static func _csharp_symbol_regexes() -> Dictionary:
+	if _csharp_symbol_regex_cache.is_empty():
+		var class_regex: RegEx = RegEx.new()
+		class_regex.compile("class\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(?::\\s*([A-Za-z_][A-Za-z0-9_\\.]*))?")
+		var method_regex: RegEx = RegEx.new()
+		method_regex.compile("(?:public|private|protected|internal)\\s+(?:override\\s+|virtual\\s+|static\\s+|async\\s+|partial\\s+)*[A-Za-z_][A-Za-z0-9_<>\\.?\\[\\]]*\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\(")
+		var property_regex: RegEx = RegEx.new()
+		property_regex.compile("(?:public|private|protected|internal)\\s+(?:static\\s+)?[A-Za-z_][A-Za-z0-9_<>\\.?\\[\\]]*\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\{")
+		var constant_regex: RegEx = RegEx.new()
+		constant_regex.compile("(?:public|private|protected|internal)\\s+const\\s+[A-Za-z_][A-Za-z0-9_<>\\.?\\[\\]]*\\s+([A-Za-z_][A-Za-z0-9_]*)")
+		var delegate_regex: RegEx = RegEx.new()
+		delegate_regex.compile("delegate\\s+void\\s+([A-Za-z_][A-Za-z0-9_]*)EventHandler\\s*\\(")
+		_csharp_symbol_regex_cache = {
+			"class": class_regex,
+			"method": method_regex,
+			"property": property_regex,
+			"constant": constant_regex,
+			"delegate": delegate_regex
+		}
+	return _csharp_symbol_regex_cache
+
 func _index_csharp_symbols(script_path: String, content: String) -> Dictionary:
 	var line_count: int = content.split("\n").size()
 	var class_name_value: String = ""
@@ -773,16 +802,12 @@ func _index_csharp_symbols(script_path: String, content: String) -> Dictionary:
 	var constants: Array = []
 	var next_delegate_is_signal: bool = false
 
-	var class_regex: RegEx = RegEx.new()
-	class_regex.compile("class\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(?::\\s*([A-Za-z_][A-Za-z0-9_\\.]*))?")
-	var method_regex: RegEx = RegEx.new()
-	method_regex.compile("(?:public|private|protected|internal)\\s+(?:override\\s+|virtual\\s+|static\\s+|async\\s+|partial\\s+)*[A-Za-z_][A-Za-z0-9_<>\\.?\\[\\]]*\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\(")
-	var property_regex: RegEx = RegEx.new()
-	property_regex.compile("(?:public|private|protected|internal)\\s+(?:static\\s+)?[A-Za-z_][A-Za-z0-9_<>\\.?\\[\\]]*\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\{")
-	var constant_regex: RegEx = RegEx.new()
-	constant_regex.compile("(?:public|private|protected|internal)\\s+const\\s+[A-Za-z_][A-Za-z0-9_<>\\.?\\[\\]]*\\s+([A-Za-z_][A-Za-z0-9_]*)")
-	var delegate_regex: RegEx = RegEx.new()
-	delegate_regex.compile("delegate\\s+void\\s+([A-Za-z_][A-Za-z0-9_]*)EventHandler\\s*\\(")
+	var regexes: Dictionary = _csharp_symbol_regexes()
+	var class_regex: RegEx = regexes["class"]
+	var method_regex: RegEx = regexes["method"]
+	var property_regex: RegEx = regexes["property"]
+	var constant_regex: RegEx = regexes["constant"]
+	var delegate_regex: RegEx = regexes["delegate"]
 
 	for line in content.split("\n"):
 		var trimmed: String = _strip_csharp_line_comment(line).strip_edges()
@@ -965,16 +990,12 @@ func _find_csharp_symbol_definitions(script_path: String, content: String, symbo
 	var include_all_kinds: bool = symbol_kinds.is_empty()
 	var next_delegate_is_signal: bool = false
 
-	var class_regex: RegEx = RegEx.new()
-	class_regex.compile("class\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(?::\\s*([A-Za-z_][A-Za-z0-9_\\.]*))?")
-	var method_regex: RegEx = RegEx.new()
-	method_regex.compile("(?:public|private|protected|internal)\\s+(?:override\\s+|virtual\\s+|static\\s+|async\\s+|partial\\s+)*[A-Za-z_][A-Za-z0-9_<>\\.?\\[\\]]*\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\(")
-	var property_regex: RegEx = RegEx.new()
-	property_regex.compile("(?:public|private|protected|internal)\\s+(?:static\\s+)?[A-Za-z_][A-Za-z0-9_<>\\.?\\[\\]]*\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\{")
-	var constant_regex: RegEx = RegEx.new()
-	constant_regex.compile("(?:public|private|protected|internal)\\s+const\\s+[A-Za-z_][A-Za-z0-9_<>\\.?\\[\\]]*\\s+([A-Za-z_][A-Za-z0-9_]*)")
-	var delegate_regex: RegEx = RegEx.new()
-	delegate_regex.compile("delegate\\s+void\\s+([A-Za-z_][A-Za-z0-9_]*)EventHandler\\s*\\(")
+	var regexes: Dictionary = _csharp_symbol_regexes()
+	var class_regex: RegEx = regexes["class"]
+	var method_regex: RegEx = regexes["method"]
+	var property_regex: RegEx = regexes["property"]
+	var constant_regex: RegEx = regexes["constant"]
+	var delegate_regex: RegEx = regexes["delegate"]
 
 	var lines: PackedStringArray = content.split("\n")
 	for i in range(lines.size()):

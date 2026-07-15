@@ -401,6 +401,11 @@ func _tool_batch_update_node_properties(params: Dictionary) -> Dictionary:
 		return {"error": "Editor interface not available"}
 
 	var prepared_changes: Array = []
+	# One property-type map per node instance (built on first touch, reused
+	# across every change targeting that node) instead of a full
+	# get_property_list() scan per change — a batch often applies several
+	# properties to the same node.
+	var property_type_maps: Dictionary = {}
 	for change in changes:
 		if not (change is Dictionary):
 			return {"error": "Each change entry must be an object"}
@@ -418,7 +423,11 @@ func _tool_batch_update_node_properties(params: Dictionary) -> Dictionary:
 			var parsed: Variant = JSON.parse_string(actual_value)
 			if parsed != null:
 				actual_value = parsed
-		var converted_value: Variant = _convert_value_for_property(target_node, property_name, actual_value)
+		var node_key: int = target_node.get_instance_id()
+		if not property_type_maps.has(node_key):
+			property_type_maps[node_key] = _property_type_map(target_node)
+		var property_type: int = int((property_type_maps[node_key] as Dictionary).get(property_name, TYPE_NIL))
+		var converted_value: Variant = _convert_value_for_property(target_node, property_name, actual_value, property_type)
 		
 		# Validate res:// resource paths before setting
 		if actual_value is String and (actual_value as String).begins_with("res://"):
@@ -1220,23 +1229,43 @@ static func _append_child_path(parent_path: String, child_name: String) -> Strin
 	return parent_path + "/" + child_name
 
 static func _collect_nodes(node: Node, path: String, recursive: bool, result: Array[String], scene_root: Node = null) -> void:
-	var node_path: String = _make_friendly_path(node, scene_root)
+	# Only the initial call (path == "") needs the full get_path()-based
+	# computation; every recursive call already has the parent's friendly path
+	# and can extend it with a plain string append, avoiding a fresh
+	# get_path() walk (and the root-path comparison) per node. This turns the
+	# traversal from O(node_count * depth) into O(node_count).
+	var node_path: String = path if not path.is_empty() else _make_friendly_path(node, scene_root)
 	result.append(node_path)
 	if recursive:
 		for child_index in range(node.get_child_count()):
 			var child: Node = node.get_child(child_index)
-			_collect_nodes(child, node_path, recursive, result, scene_root)
+			_collect_nodes(child, _append_child_path(node_path, child.name), recursive, result, scene_root)
 
-func _convert_value_for_property(node: Node, property_name: String, value: Variant) -> Variant:
+# Linear scan of get_property_list() to resolve a single property's type.
+# Callers that convert many properties on the same object in a loop (batch
+# node/property updates, subresource property fills) should call
+# _property_type_map() once per object instead of hitting this per property.
+func _property_type_for(obj: Object, property_name: String) -> int:
+	for prop in obj.get_property_list():
+		if prop["name"] == property_name:
+			return prop["type"]
+	return TYPE_NIL
+
+# {property_name: type} for every property on obj, built with a single
+# get_property_list() scan. Meant to be built once per object and reused
+# across a loop of per-property conversions on that same object.
+func _property_type_map(obj: Object) -> Dictionary:
+	var types: Dictionary = {}
+	for prop in obj.get_property_list():
+		types[prop["name"]] = prop["type"]
+	return types
+
+func _convert_value_for_property(node: Node, property_name: String, value: Variant, property_type_override: Variant = null) -> Variant:
 	if value == null:
 		return value
-	
-	var property_type: int = TYPE_NIL
-	for prop in node.get_property_list():
-		if prop["name"] == property_name:
-			property_type = prop["type"]
-			break
-	
+
+	var property_type: int = int(property_type_override) if property_type_override != null else _property_type_for(node, property_name)
+
 	if property_type == TYPE_NIL:
 		return value
 	
@@ -1854,10 +1883,11 @@ func _tool_add_resource(params: Dictionary) -> Dictionary:
 	# Apply optional property values after creation
 	var properties: Dictionary = params.get("properties", {})
 	if properties is Dictionary and not properties.is_empty():
+		var resource_node_type_map: Dictionary = _property_type_map(resource_node)
 		for prop_name in properties:
 			var prop_value: Variant = properties[prop_name]
 			if prop_name in resource_node:
-				var converted: Variant = _convert_value_for_property(resource_node, prop_name, prop_value)
+				var converted: Variant = _convert_value_for_property(resource_node, prop_name, prop_value, int(resource_node_type_map.get(prop_name, TYPE_NIL)))
 				resource_node.set(prop_name, converted)
 
 	editor_interface.mark_scene_as_unsaved()
@@ -2638,11 +2668,14 @@ func _tool_set_node_subresource(params: Dictionary) -> Dictionary:
 
 	var properties_set: Array = []
 	var properties_skipped: Array = []
+	# Single get_property_list() scan for new_resource, reused for every
+	# property in this loop instead of one scan per property.
+	var new_resource_type_map: Dictionary = _property_type_map(new_resource)
 	for prop_name in properties:
 		if not (prop_name in new_resource):
 			properties_skipped.append({"name": prop_name, "reason": "not a property of " + resource_type})
 			continue
-		var coerced: Variant = _coerce_object_property(new_resource, prop_name, properties[prop_name])
+		var coerced: Variant = _coerce_object_property(new_resource, prop_name, properties[prop_name], int(new_resource_type_map.get(prop_name, TYPE_NIL)))
 		new_resource.set(prop_name, coerced)
 		properties_set.append(prop_name)
 
@@ -2770,14 +2803,10 @@ func _tool_get_node_subresource(params: Dictionary) -> Dictionary:
 # Helpers shared by the sub-resource tools
 # ----------------------------------------------------------------------------
 
-func _coerce_object_property(obj: Object, property_name: String, value: Variant) -> Variant:
+func _coerce_object_property(obj: Object, property_name: String, value: Variant, property_type_override: Variant = null) -> Variant:
 	if value == null:
 		return value
-	var property_type: int = TYPE_NIL
-	for prop in obj.get_property_list():
-		if prop["name"] == property_name:
-			property_type = prop["type"]
-			break
+	var property_type: int = int(property_type_override) if property_type_override != null else _property_type_for(obj, property_name)
 	if property_type == TYPE_NIL:
 		return value
 	match property_type:

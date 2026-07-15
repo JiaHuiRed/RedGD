@@ -2,6 +2,17 @@
 
 All notable user-facing changes are tracked here.
 
+## [RedGD v0.0.7] - 2026-07-15
+
+> 中优先级性能修复第二批（共两批）：正则缓存 + 节点属性/路径查找去重扫描，收尾本轮性能审查的全部中优先级发现。
+
+### 性能
+- `tools/project_tools_native.gd`：`scan_migration_compatibility`/`apply_migration_fixes`（迁移规则）和 `find_deprecated_api_usage`（弃用 API 规则）此前每次调用都对固定的规则表重新 `RegEx.new().compile()`。新增按 pattern 字符串缓存的 `_cached_scan_regex`（进程生命周期），两组规则共享同一份缓存。
+- `tools/script_tools_native.gd`：`_index_csharp_symbols`（`list_project_script_symbols`）和 `_find_csharp_symbol_definitions`（符号定义查找）各自内联同一套 5 个 C# 符号正则，每处理一个 `.cs` 文件就重新编译一遍。新增 `_csharp_symbol_regexes()` 惰性初始化一次、两个函数共享。
+- `tools/node_tools_native.gd`：
+  - `batch_update_node_properties`、`add_resource`、`set_node_subresource` 对同一节点/资源的多个属性逐个调用 `_convert_value_for_property`/`_coerce_object_property`，每次都重新 `get_property_list()` 线性扫描找类型（O(改动数 × 属性数)）。新增 `_property_type_map(obj)` 按对象实例扫描一次并缓存复用，三个调用点都改成先建一份类型表再逐属性查表；缓存作用域限定在单次工具调用内（按 node 的 `instance_id` 或对象引用建表），不做跨调用持久化，避免动态属性列表（如 ShaderMaterial 的 `shader_parameter/*`）产生陈旧数据。
+  - `list_nodes`（`_collect_nodes`）此前虽然接收了父节点已算好的路径参数，却始终丢弃它、对每个节点重新调用 `node.get_path()` + `scene_root.get_path()` 全量计算 friendly path，是 O(节点数 × 深度)。改成递归时用已有的 `_append_child_path` helper 对父路径做 O(1) 字符串追加，只有最外层调用做一次完整计算，整体降到 O(节点数)。
+
 ## [RedGD v0.0.6] - 2026-07-15
 
 > 中优先级性能修复第一批（共两批）：消灭剩余的字符串逐字符 `+=` 拼接（O(n²)），改成 `PackedStringArray` 累积 + 一次性 `join`。均为纯机械改写，控制流与逐字符输出顺序不变，只换了累加器类型。

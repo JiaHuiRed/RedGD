@@ -4514,11 +4514,28 @@ func _migration_lang_for_path(path: String) -> String:
 		return "cs"
 	return "gd"
 
+# Process-lifetime cache of compiled RegEx for project-scan rule patterns
+# (migration rules, deprecated-API rules). These pattern sets are fixed data,
+# so each pattern only needs to be compiled once instead of on every
+# scan_migration_compatibility / apply_migration_fixes / find_deprecated_api_usage
+# call. A failed compile is cached as null so it's never retried.
+static var _scan_rule_regex_cache: Dictionary = {}
+
+static func _cached_scan_regex(pattern: String) -> RegEx:
+	if _scan_rule_regex_cache.has(pattern):
+		return _scan_rule_regex_cache[pattern]
+	var re: RegEx = RegEx.new()
+	if re.compile(pattern) != OK:
+		_scan_rule_regex_cache[pattern] = null
+		return null
+	_scan_rule_regex_cache[pattern] = re
+	return re
+
 func _compile_migration_rules(rules: Array) -> Array:
 	var compiled: Array = []
 	for rule in rules:
-		var re: RegEx = RegEx.new()
-		if re.compile(str(rule.get("pattern", ""))) != OK:
+		var re: RegEx = _cached_scan_regex(str(rule.get("pattern", "")))
+		if re == null:
 			continue
 		compiled.append({"rule": rule, "re": re})
 	return compiled
@@ -4937,8 +4954,8 @@ func _tool_find_deprecated_api_usage(params: Dictionary) -> Dictionary:
 	var rules: Array = _deprecated_api_rules()
 	var compiled: Array = []
 	for rule in rules:
-		var regex: RegEx = RegEx.new()
-		if regex.compile(str(rule.get("pattern", ""))) != OK:
+		var regex: RegEx = _cached_scan_regex(str(rule.get("pattern", "")))
+		if regex == null:
 			continue
 		var enriched: Dictionary = rule.duplicate()
 		var engine_class: String = str(rule.get("engine_class", ""))
